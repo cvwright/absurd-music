@@ -211,7 +211,9 @@ Denormalized for fast display, with IDs for rich data lookup:
   "album_id": "album_001",
 
   "audio_blob_id": "B_...",
+  "audio_blob_key": "base64_encoded_key",
   "artwork_blob_id": "B_...",
+  "artwork_blob_key": "base64_encoded_key",
 
   "duration_ms": 259000,
   "track_number": 1,
@@ -220,11 +222,6 @@ Denormalized for fast display, with IDs for rich data lookup:
 
   "file_format": "mp3",
   "bitrate": 320,
-
-  "encryption": {
-    "method": "file",
-    "key": "base64_encoded_random_key"
-  },
 
   "purchased_from": "iTunes",
   "purchase_date": "2024-01-15",
@@ -250,10 +247,7 @@ Stored at `/library/albums/{album_id}` where `album_id = PRF(artist_name + album
   "artist_name": "The Beatles",
   "year": 1969,
   "artwork_blob_id": "B_...",
-  "artwork_encryption": {
-    "method": "file",
-    "key": "base64_encoded_key"
-  },
+  "artwork_blob_key": "base64_encoded_key",
   "total_tracks": 17,
   "genre": "Rock",
   "track_ids": ["track_001", "track_002", ...]
@@ -272,6 +266,7 @@ Stored at `/library/artists/{artist_id}` where `artist_id = PRF(artist_name)`:
   "name": "The Beatles",
   "bio": "Legendary British rock band...",
   "photo_blob_id": "B_...",
+  "photo_blob_key": "base64_encoded_key",
   "formed_year": 1960,
   "genres": ["Rock", "Pop"],
   "album_ids": ["album_abc123xyz", "album_ghi789rst", ...]
@@ -316,7 +311,8 @@ Lightweight index for fast client-side search (~1-2MB for 10K tracks):
   "track_ids": ["track_abc123", "track_def456", "track_ghi789"],
   "created_at": 1705334400000,
   "updated_at": 1705420800000,
-  "artwork_blob_id": "B_..."
+  "artwork_blob_id": "B_...",
+  "artwork_blob_key": "base64_encoded_key"
 }
 ```
 
@@ -356,7 +352,8 @@ Posted to topic chain for activity tracking:
   "artist": "Artist Name",
   "album": "Album Name",
   "started_at": 1705420800000,
-  "artwork_blob_id": "B_..."
+  "artwork_blob_id": "B_...",
+  "artwork_blob_key": "base64_encoded_key"
 }
 ```
 
@@ -370,69 +367,31 @@ Posted to topic chain for activity tracking:
 
 ### File-Level Encryption + Download-Then-Play
 
-We use **file-level encryption** (not chunk-level) for simplicity:
+We use **file-level encryption** (not chunk-level) for simplicity. The reeeductio SDK handles all encryption/decryption transparently using the space's symmetric key.
 
-**Encryption (during import):**
+**Upload (during import):**
 ```typescript
-// Generate random data encryption key (DEK) for this specific blob
-const dataKey = crypto.getRandomValues(new Uint8Array(32)); // 256-bit AES key
-const iv = crypto.getRandomValues(new Uint8Array(16)); // 128-bit IV for AES-GCM
+// SDK encrypts the audio file and uploads to blob storage
+// Returns content-addressed blob_id (SHA256 of encrypted content)
+{const audioBlobId, _, const audioBlobKey} = await musicSpace.encryptAndUploadBlob(audioFileBytes);
 
-// Import DEK as CryptoKey
-const cryptoKey = await crypto.subtle.importKey(
-  'raw',
-  dataKey,
-  { name: 'AES-GCM' },
-  true,
-  ['encrypt', 'decrypt']
-);
-
-// Encrypt audio file with random DEK
-const ciphertext = await crypto.subtle.encrypt(
-  { name: 'AES-GCM', iv },
-  cryptoKey,
-  audioFileBytes
-);
-
-// Prepend IV to ciphertext (self-contained blob)
-// Format: [16-byte IV][ciphertext with appended GCM auth tag]
-const encryptedBlob = new Uint8Array(16 + ciphertext.byteLength);
-encryptedBlob.set(new Uint8Array(iv), 0);
-encryptedBlob.set(new Uint8Array(ciphertext), 16);
-
-// Upload encrypted blob (IV + ciphertext + auth tag) to S3
-await uploadBlob(audioBlobId, encryptedBlob.buffer);
-
-// Store only DEK in track metadata (IV is with the blob)
-trackMetadata.encryption = {
-  method: 'file',
-  key: base64(dataKey)  // Random per-blob key
-};
-
-// Save metadata to space (entire metadata object gets encrypted)
+// Save metadata to space (SDK encrypts state automatically)
 await musicSpace.setEncryptedState(`library/tracks/${trackId}`, trackMetadata);
 ```
 
-**Blob format:**
-- Bytes 0-15: Random IV (initialization vector)
-- Bytes 16-N: AES-GCM ciphertext with authentication tag appended by Web Crypto API
-- The IV is stored with the ciphertext, making blobs self-contained
-
 **Security model:**
-- Each blob has a unique random encryption key (DEK - Data Encryption Key)
-- DEK is stored in the track metadata
-- Track metadata is encrypted by the reeeductio space (using space's symmetric key)
-- Result: Two layers of encryption - blob encrypted with DEK, DEK encrypted in space state
-- Benefit: Compromising one track's key doesn't expose other tracks
+- Blobs are encrypted by the SDK using the space's symmetric key (AES-GCM)
+- Track metadata is also encrypted by the reeeductio space
+- All space members with the symmetric key can decrypt blobs
+- Content-addressed blob IDs (SHA256 of ciphertext) enable deduplication
 
 **Playback (simple Blob URL approach):**
 
 1. **Fetch track metadata** from space state (decrypted by SDK)
-2. **Download encrypted blob** from S3
-3. **Decrypt blob** using DEK from metadata
-4. **Create Blob URL** from decrypted ArrayBuffer
-5. **Play** via HTML5 Audio element
-6. **Pre-fetch next track** in background during playback
+2. **Download and decrypt blob** via SDK
+3. **Create Blob URL** from decrypted ArrayBuffer
+4. **Play** via HTML5 Audio element
+5. **Pre-fetch next track** in background during playback
 
 **Code example:**
 ```typescript
@@ -445,43 +404,21 @@ async playTrack(trackId: string) {
   let decryptedAudio = await cacheDB.getTrack(trackId);
 
   if (!decryptedAudio) {
-    // 3. Download encrypted blob (contains IV + ciphertext + auth tag)
-    const encryptedBlob = await musicSpace.downloadBlob(metadata.audio_blob_id);
+    // 3. Download and decrypt blob (SDK handles decryption)
+    decryptedAudio = await musicSpace.downloadAndDecryptBlob(metadata.audio_blob_id, metadata.audio_blob_key);
 
-    // 4. Extract IV from first 16 bytes
-    const blobBytes = new Uint8Array(encryptedBlob);
-    const iv = blobBytes.slice(0, 16);
-    const ciphertext = blobBytes.slice(16);
-
-    // 5. Import DEK from metadata
-    const dataKey = base64decode(metadata.encryption.key);
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      dataKey,
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
-
-    // 6. Decrypt with blob's specific DEK and extracted IV
-    decryptedAudio = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      cryptoKey,
-      ciphertext
-    );
-
-    // 7. Cache decrypted audio
+    // 4. Cache decrypted audio
     await cacheDB.cacheTrack(trackId, decryptedAudio, metadata);
   }
 
-  // 8. Create Blob URL and play
+  // 5. Create Blob URL and play
   const blob = new Blob([decryptedAudio], { type: `audio/${metadata.file_format}` });
   const url = URL.createObjectURL(blob);
 
   this.audio = new Audio(url);
   this.audio.play();
 
-  // 9. Cleanup when done
+  // 6. Cleanup when done
   this.audio.addEventListener('ended', () => {
     URL.revokeObjectURL(url);
   });
@@ -493,7 +430,7 @@ async playTrack(trackId: string) {
 - ✅ Works with all audio formats (MP3, AAC/M4A, FLAC, Opus)
 - ✅ No external libraries needed (mp4box.js, etc.)
 - ✅ Pre-fetching + caching make latency negligible
-- ✅ Decryption overhead is minimal (~100-500ms)
+- ✅ SDK handles all crypto operations
 
 **Timeline:**
 - User clicks play → Download starts (~5-10 seconds for typical track)
@@ -624,62 +561,15 @@ async function importTrack(audioFile: File, spaceSymmetricKey: Uint8Array) {
   const artistId = await generateArtistId(metadata.artist, spaceSymmetricKey);
   const albumId = await generateAlbumId(metadata.artist, metadata.album, spaceSymmetricKey);
 
-  // 6. Encrypt audio file with random DEK
+  // 6. Upload audio file (SDK encrypts and returns content-addressed blob ID)
+  {const audioBlobId, _, const audioBlobKey} = await musicSpace.encryptAndUploadBlob(audioFileBytes);
 
-  const audioDataKey = crypto.getRandomValues(new Uint8Array(32));
-  const audioIV = crypto.getRandomValues(new Uint8Array(16));
-
-  const audioCryptoKey = await crypto.subtle.importKey(
-    'raw',
-    audioDataKey,
-    { name: 'AES-GCM' },
-    true,
-    ['encrypt']
-  );
-
-  const audioCiphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: audioIV },
-    audioCryptoKey,
-    audioFileBytes
-  );
-
-  // Prepend IV to ciphertext
-  const encryptedAudio = new Uint8Array(16 + audioCiphertext.byteLength);
-  encryptedAudio.set(new Uint8Array(audioIV), 0);
-  encryptedAudio.set(new Uint8Array(audioCiphertext), 16);
-
-  // 7. Upload encrypted blob (IV + ciphertext + auth tag) to S3
-  const audioBlobId = await uploadBlob(encryptedAudio.buffer);
-
-  // 8. Handle album artwork (also with random DEK)
+  // 7. Handle album artwork
   const artwork = metadata.artwork || await fetchArtworkFromAPI(metadata);
   const artworkBytes = await artwork.arrayBuffer();
+  {const artworkBlobId, _, const artworkBlobKey} = await musicSpace.uploadEncryptedBlob(artworkBytes);
 
-  const artworkDataKey = crypto.getRandomValues(new Uint8Array(32));
-  const artworkIV = crypto.getRandomValues(new Uint8Array(16));
-
-  const artworkCryptoKey = await crypto.subtle.importKey(
-    'raw',
-    artworkDataKey,
-    { name: 'AES-GCM' },
-    true,
-    ['encrypt']
-  );
-
-  const artworkCiphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: artworkIV },
-    artworkCryptoKey,
-    artworkBytes
-  );
-
-  // Prepend IV to ciphertext
-  const encryptedArtwork = new Uint8Array(16 + artworkCiphertext.byteLength);
-  encryptedArtwork.set(new Uint8Array(artworkIV), 0);
-  encryptedArtwork.set(new Uint8Array(artworkCiphertext), 16);
-
-  const artworkBlobId = await uploadBlob(encryptedArtwork.buffer);
-
-  // 9. Create track metadata (includes DEKs and IDs)
+  // 8. Create track metadata
   const trackMetadata = {
     track_id: trackId,
     title: metadata.title,
@@ -688,32 +578,26 @@ async function importTrack(audioFile: File, spaceSymmetricKey: Uint8Array) {
     album_name: metadata.album,
     album_id: albumId,
     audio_blob_id: audioBlobId,
+    audio_blob_key: audioBlobKey,
     artwork_blob_id: artworkBlobId,
+    artwork_blob_key: artworkBlobKey,
     duration_ms: metadata.duration,
     track_number: metadata.track_number,
     disc_number: metadata.disc_number || 1,
     file_format: metadata.format,
     bitrate: metadata.bitrate,
     genre: metadata.genre,
-    encryption: {
-      method: 'file',
-      key: base64(audioDataKey)
-    },
-    artwork_encryption: {
-      method: 'file',
-      key: base64(artworkDataKey)
-    },
     purchased_from: "iTunes",
     added_at: Date.now()
   };
 
-  // 10. Save to space state (metadata gets encrypted by space)
+  // 9. Save to space state (SDK encrypts metadata automatically)
   await musicSpace.setEncryptedState(`library/tracks/${trackId}`, trackMetadata);
 
-  // 11. Update search index
+  // 10. Update search index
   await updateSearchIndex(trackMetadata);
 
-  // 12. Create/update album entry
+  // 11. Create/update album entry
   await upsertAlbum({
     album_id: albumId,
     title: metadata.album,
@@ -721,15 +605,12 @@ async function importTrack(audioFile: File, spaceSymmetricKey: Uint8Array) {
     artist_name: metadata.artist,
     year: metadata.year,
     artwork_blob_id: artworkBlobId,
-    artwork_encryption: {
-      method: 'file',
-      key: base64(artworkDataKey)
-    },
+    artwork_blob_key: artworkBlobKey,
     genre: metadata.genre,
     track_ids: [trackId]  // Add track to album, merge if album exists
   }, spaceSymmetricKey);
 
-  // 13. Create/update artist entry
+  // 12. Create/update artist entry
   await upsertArtist({
     artist_id: artistId,
     name: metadata.artist,
@@ -946,7 +827,7 @@ Wallet Space (C_wallet_...)
 }
 ```
 
-**Security Note:** The `space_key` is encrypted with the user's keypair, so even if someone accesses the wallet space data, they cannot decrypt music space contents without the user's private key.
+**Security Note:** The entries in the wallet space are stored as encrypted state, so even if someone accesses the raw wallet space data on the backend, they cannot decrypt music space contents without the decryption key.
 
 ### App Startup Flow
 
@@ -1025,22 +906,19 @@ const space = new Space({
   symmetric_key: spaceKey
 });
 
-// State operations
+// State operations (SDK encrypts/decrypts using space symmetric key)
 await space.setEncryptedState(path, data);
 const entry = await space.getEncryptedState(path);
 
-// Blob operations
-await space.uploadBlob(blobId, encryptedData);
-const blob = await space.downloadBlob(blobId);
-const presignedUrl = await space.getBlobPresignedUrl(blobId);
+// Blob operations (SDK encrypts/decrypts using space symmetric key)
+// Upload: encrypts plaintext, returns content-addressed blob_id (SHA256 of ciphertext)
+{const blobId, const blobSize, const blobKey} = await space.encryptAndUploadBlob(plaintextData);
+// Download: fetches and decrypts, returns plaintext
+const plaintext = await space.downloadEncryptedBlob(blobId, blobKey);
 
 // Message operations
 await space.postMessage(topicId, encryptedPayload);
 const messages = await space.getMessages(topicId, { from, to, limit });
-
-// Crypto utilities
-const encrypted = await encryptWithSpaceKey(data, spaceKey);
-const decrypted = await decryptWithSpaceKey(encrypted, spaceKey);
 ```
 
 ### Frontend
@@ -1059,30 +937,25 @@ const decrypted = await decryptWithSpaceKey(encrypted, spaceKey);
 
 ## Security Considerations
 
-### Layered Encryption Architecture
+### SDK-Managed Encryption
 
-The music player uses a **two-layer encryption model**:
+The music player uses the reeeductio SDK for all encryption, providing a **unified encryption model**:
 
-1. **Blob Layer (Application-level encryption)**
-   - Each audio/image blob encrypted with unique random DEK (Data Encryption Key)
-   - DEK is 256-bit AES-GCM key generated per-blob
-   - DEK stored in track metadata (encrypted by space)
-   - IV stored with blob (prepended to ciphertext)
-   - Blob format: `[16-byte IV][AES-GCM ciphertext with auth tag]`
-   - Blobs uploaded to S3 already encrypted and self-contained
+1. **Blob Encryption**
+   - SDK encrypts blobs using the space's symmetric key (AES-GCM)
+   - Blob IDs are content-addressed (SHA256 of encrypted ciphertext)
+   - Encryption is transparent to the application
 
-2. **State Layer (Space-level encryption)**
-   - Track metadata (including DEKs) encrypted by reeeductio space
-   - Uses space's symmetric key
+2. **State Encryption**
+   - Track metadata encrypted by reeeductio space using space's symmetric key
    - SDK handles encryption/decryption transparently
-   - IV is NOT stored in metadata (stored with blob instead)
 
 **Security benefits:**
-- ✅ S3 server never sees plaintext audio or DEKs
-- ✅ reeeductio server never sees plaintext audio (only encrypted metadata)
-- ✅ Compromising one track's DEK doesn't expose other tracks
-- ✅ Client must have both space key AND metadata access to decrypt audio
-- ✅ Defense in depth - two independent encryption layers
+- ✅ S3 server never sees plaintext audio
+- ✅ reeeductio server never sees plaintext audio or metadata
+- ✅ All encryption uses space's symmetric key (single key to protect)
+- ✅ No application-level key management required
+- ✅ Content-addressed blob IDs enable deduplication without exposing content
 
 ### PRF-Based Track IDs
 
@@ -1130,10 +1003,9 @@ const trackId = HMAC-SHA256(space_key, SHA256(audioFile));  // Private AND deter
 
 **Neither server can see:**
 - Track titles, artists, albums (encrypted in space state)
-- Audio file contents (encrypted with per-blob DEKs)
-- Album artwork (encrypted with per-blob DEKs)
+- Audio file contents (encrypted with space symmetric key)
+- Album artwork (encrypted with space symmetric key)
 - User playlists, preferences, playback history (encrypted in space state)
-- Per-blob encryption keys (DEKs encrypted in space state)
 - Space symmetric encryption key
 - User private keys
 
