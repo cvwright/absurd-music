@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/ed25519": "^3.0.0",
     "lit": "^3.2.0",
     "reeeductio": "file:../../reeeductio/typescript-sdk"
   },

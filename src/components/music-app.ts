@@ -9,11 +9,13 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space.js';
 
 // Import child components
 import './player-bar.js';
 import './sidebar.js';
 import './library-view.js';
+import './login-view.js';
 
 type View = 'library' | 'album' | 'artist' | 'playlist' | 'search';
 
@@ -67,12 +69,21 @@ export class MusicApp extends LitElement {
   `;
 
   @state()
+  private authenticated = false;
+
+  private musicSpace: MusicSpaceService | null = null;
+
+  @state()
   private currentView: View = 'library';
 
   @state()
   private viewParams: Record<string, string> = {};
 
   render() {
+    if (!this.authenticated) {
+      return html`<login-view @login=${this.handleLogin}></login-view>`;
+    }
+
     return html`
       <aside class="sidebar">
         <app-sidebar
@@ -105,6 +116,20 @@ export class MusicApp extends LitElement {
         return html`<div>Search view</div>`;
       default:
         return html`<library-view></library-view>`;
+    }
+  }
+
+  private async handleLogin(e: CustomEvent<MusicSpaceConfig>) {
+    try {
+      this.musicSpace = new MusicSpaceService(e.detail);
+      await this.musicSpace.authenticate();
+      this.authenticated = true;
+    } catch (err) {
+      this.musicSpace = null;
+      const loginView = this.shadowRoot?.querySelector('login-view');
+      if (loginView) {
+        loginView.showError(err instanceof Error ? err.message : 'Authentication failed');
+      }
     }
   }
 
