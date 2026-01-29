@@ -125,7 +125,7 @@ export class LoginView extends LitElement {
           type="password"
           .value=${this.privateKey}
           @input=${(e: Event) => this.privateKey = (e.target as HTMLInputElement).value}
-          placeholder="Base64-encoded Ed25519 private key"
+          placeholder="Base64 or hex encoded"
         />
 
         <label for="symmetricRoot">Symmetric Root</label>
@@ -134,7 +134,7 @@ export class LoginView extends LitElement {
           type="password"
           .value=${this.symmetricRoot}
           @input=${(e: Event) => this.symmetricRoot = (e.target as HTMLInputElement).value}
-          placeholder="Base64-encoded 32-byte symmetric key"
+          placeholder="Base64 or hex encoded"
         />
 
         <label for="serverUrl">Server URL (optional)</label>
@@ -157,14 +157,33 @@ export class LoginView extends LitElement {
     `;
   }
 
+  /**
+   * Decode a string as either hex or base64.
+   * Hex is detected if the string is 64 chars and all hex digits (for 32-byte keys).
+   */
+  private decodeKey(input: string): Uint8Array {
+    const trimmed = input.trim();
+    // 32 bytes = 64 hex chars
+    if (trimmed.length === 64 && /^[0-9a-fA-F]+$/.test(trimmed)) {
+      // Hex encoding
+      const bytes = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) {
+        bytes[i] = parseInt(trimmed.slice(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    }
+    // Otherwise try base64
+    return decodeBase64(trimmed);
+  }
+
   private async handleConnect() {
     this.error = '';
     this.connecting = true;
 
     try {
-      const privateKeyBytes = decodeBase64(this.privateKey.trim());
+      const privateKeyBytes = this.decodeKey(this.privateKey);
       const publicKeyBytes = await getPublicKeyAsync(privateKeyBytes);
-      const symmetricRootBytes = decodeBase64(this.symmetricRoot.trim());
+      const symmetricRootBytes = this.decodeKey(this.symmetricRoot);
 
       const config: MusicSpaceConfig = {
         spaceId: this.spaceId.trim(),
