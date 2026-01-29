@@ -10,6 +10,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space.js';
+import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
 
 // Import child components
 import './player-bar.js';
@@ -79,6 +80,25 @@ export class MusicApp extends LitElement {
   @state()
   private viewParams: Record<string, string> = {};
 
+  override connectedCallback() {
+    super.connectedCallback();
+    this.tryAutoLogin();
+  }
+
+  private async tryAutoLogin() {
+    const savedConfig = await loadCredentials();
+    if (savedConfig) {
+      try {
+        this.musicSpace = new MusicSpaceService(savedConfig);
+        await this.musicSpace.authenticate();
+        this.authenticated = true;
+      } catch {
+        // Saved credentials failed, clear them and show login
+        clearCredentials();
+      }
+    }
+  }
+
   render() {
     if (!this.authenticated) {
       return html`<login-view @login=${this.handleLogin}></login-view>`;
@@ -123,6 +143,7 @@ export class MusicApp extends LitElement {
     try {
       this.musicSpace = new MusicSpaceService(e.detail);
       await this.musicSpace.authenticate();
+      saveCredentials(e.detail);
       this.authenticated = true;
     } catch (err) {
       this.musicSpace = null;
