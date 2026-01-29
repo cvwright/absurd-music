@@ -6,6 +6,8 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { ImportService } from '@/services/index.js';
+import type { ParsedTrackMetadata } from '@/types/index.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
 
@@ -257,9 +259,31 @@ export class LibraryView extends LitElement {
     `;
   }
 
-  private openImport() {
-    // TODO: Open import dialog
-    console.log('Opening import dialog...');
+  private async openImport() {
+    const files = await ImportService.selectFiles();
+    if (files.length === 0) {
+      return;
+    }
+
+    console.log(`Selected ${files.length} file(s), parsing metadata...`);
+
+    const parsed: ParsedTrackMetadata[] = await ImportService.parseFiles(files);
+
+    // Log extracted metadata for now
+    for (const track of parsed) {
+      console.log('Parsed track:', {
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        year: track.year,
+        trackNumber: track.trackNumber,
+        durationMs: track.durationMs,
+        format: track.format,
+        hasArtwork: !!track.artwork,
+      });
+    }
+
+    // TODO: Show import review dialog, then encrypt and upload
   }
 }
 

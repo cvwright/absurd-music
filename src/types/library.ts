@@ -145,6 +145,57 @@ export interface Artist {
 }
 
 /**
+ * Parsed metadata from an audio file before import.
+ * Contains raw ID3/M4A tag data plus the file itself.
+ */
+export interface ParsedTrackMetadata {
+  /** The original file */
+  file: File;
+
+  /** Track title from tags, or filename if missing */
+  title: string;
+
+  /** Artist name from tags */
+  artist?: string;
+
+  /** Album name from tags */
+  album?: string;
+
+  /** Album release year */
+  year?: number;
+
+  /** Track number on album */
+  trackNumber?: number;
+
+  /** Total tracks on album (if available) */
+  trackTotal?: number;
+
+  /** Disc number for multi-disc albums */
+  discNumber?: number;
+
+  /** Total discs (if available) */
+  discTotal?: number;
+
+  /** Genre tag */
+  genre?: string;
+
+  /** Duration in milliseconds */
+  durationMs?: number;
+
+  /** Bitrate in kbps */
+  bitrate?: number;
+
+  /** Audio format: mp3, m4a, flac, etc. */
+  format?: string;
+
+  /** Embedded artwork if present */
+  artwork?: {
+    data: Uint8Array;
+    mimeType: string;
+  };
+}
+
+/**
  * Lightweight track entry for the search index.
  * Optimized for fast client-side filtering (~1-2MB for 10K tracks).
  */
