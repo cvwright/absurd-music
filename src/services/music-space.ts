@@ -33,6 +33,7 @@ export class MusicSpaceService {
       keyPair: config.keyPair,
       symmetricRoot: config.symmetricRoot,
       baseUrl: config.baseUrl ?? 'http://localhost:8000',
+      fetch: fetch.bind(window),
     });
 
     this.crypto = new CryptoService(config.symmetricRoot);
