@@ -279,7 +279,8 @@ export class LibraryView extends LitElement {
         trackNumber: track.trackNumber,
         durationMs: track.durationMs,
         format: track.format,
-        hasArtwork: !!track.artwork,
+        artworkMimeType: track.artwork?.mimeType || "None",
+        artworkByteSize: track.artwork?.data.length || 0,
       });
     }
 

@@ -4,7 +4,7 @@
  * Handles file selection and metadata extraction for music import.
  */
 
-import { parseBlob } from 'music-metadata';
+import { parseBuffer } from 'music-metadata';
 import type { ParsedTrackMetadata } from '@/types/index.js';
 
 /** Supported audio MIME types */
@@ -66,7 +66,17 @@ class ImportServiceImpl {
    * Parses metadata from a single audio file.
    */
   async parseFile(file: File): Promise<ParsedTrackMetadata> {
-    const metadata = await parseBlob(file);
+    // Determine MIME type, fixing m4a files (some browsers report audio/x-m4a or empty)
+    let mimeType = file.type || 'application/octet-stream';
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'm4a' && (!file.type || file.type === 'audio/x-m4a')) {
+      console.log("Setting mime type to audio/mp4");
+      mimeType = 'audio/mp4';
+    }
+
+    // Read file and parse with explicit MIME type
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const metadata = await parseBuffer(buffer, mimeType);
     const { common, format } = metadata;
 
     // Extract embedded artwork (first picture)
