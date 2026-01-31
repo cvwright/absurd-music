@@ -5,7 +5,14 @@
  */
 
 import { parseBuffer } from 'music-metadata';
-import type { ParsedTrackMetadata } from '@/types/index.js';
+import type {
+  ParsedTrackMetadata,
+  Track,
+  Album,
+  Artist,
+  SearchIndex,
+} from '@/types/index.js';
+import type { MusicSpaceService } from './music-space.js';
 
 /** Supported audio MIME types */
 const SUPPORTED_TYPES = [
@@ -21,6 +28,12 @@ const SUPPORTED_TYPES = [
 
 /** File extensions to accept in picker */
 const ACCEPT_EXTENSIONS = '.mp3,.m4a,.aac,.flac,.ogg,.wav';
+
+/** iTunes Search API endpoint */
+const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
+
+/** Desired artwork size (iTunes supports up to 10000x10000) */
+const ARTWORK_SIZE = 600;
 
 /**
  * Import service for selecting and parsing audio files.
@@ -137,6 +150,262 @@ class ImportServiceImpl {
     }
     // Fall back to file extension
     return filename?.split('.').pop()?.toLowerCase() ?? 'unknown';
+  }
+
+  /**
+   * Import a parsed track into the music space.
+   *
+   * This method:
+   * 1. Generates deterministic IDs for track, artist, and album
+   * 2. Encrypts and uploads audio blob
+   * 3. Encrypts and uploads artwork blob (if present)
+   * 4. Creates/updates Artist, Album, and Track records
+   * 5. Updates the search index
+   *
+   * @param metadata - Parsed metadata from parseFile()
+   * @param space - Authenticated MusicSpaceService instance
+   * @returns The created Track record
+   */
+  async importTrack(metadata: ParsedTrackMetadata, space: MusicSpaceService): Promise<Track> {
+    const artistName = metadata.artist ?? 'Unknown Artist';
+    const albumName = metadata.album ?? 'Unknown Album';
+
+    // Generate deterministic IDs
+    const audioBytes = await metadata.file.arrayBuffer();
+    const [trackId, artistId, albumId] = await Promise.all([
+      space.generateTrackId(audioBytes),
+      space.generateArtistId(artistName),
+      space.generateAlbumId(artistName, albumName),
+    ]);
+
+    // Upload audio blob (encrypted)
+    const { blobId: audioBlobId, encryptionKey: audioKey } =
+      await space.uploadAudioBlob(audioBytes);
+
+    // Upload artwork blob if present
+    let artworkBlobId: string | undefined;
+    let artworkKey: string | undefined;
+    if (metadata.artwork) {
+      // Copy to new ArrayBuffer to handle SharedArrayBuffer and offset cases
+      const artworkBuffer = new Uint8Array(metadata.artwork.data).buffer as ArrayBuffer;
+      const result = await space.uploadArtworkBlob(artworkBuffer);
+      artworkBlobId = result.blobId;
+      artworkKey = result.encryptionKey;
+    }
+
+    // Create track record
+    const track: Track = {
+      track_id: trackId,
+      title: metadata.title,
+      artist_name: artistName,
+      album_name: albumName,
+      album_year: metadata.year,
+      artist_id: artistId,
+      album_id: albumId,
+      audio_blob_id: audioBlobId,
+      artwork_blob_id: artworkBlobId,
+      duration_ms: metadata.durationMs ?? 0,
+      track_number: metadata.trackNumber,
+      disc_number: metadata.discNumber,
+      genre: metadata.genre,
+      file_format: metadata.format ?? 'unknown',
+      bitrate: metadata.bitrate,
+      encryption: { method: 'file', key: audioKey },
+      artwork_encryption: artworkKey ? { method: 'file', key: artworkKey } : undefined,
+      added_at: Date.now(),
+    };
+
+    // Fetch or create artist
+    const artist = await this.getOrCreateArtist(space, artistId, artistName);
+    if (!artist.album_ids.includes(albumId)) {
+      artist.album_ids.push(albumId);
+      await space.setArtist(artist);
+    }
+
+    // Fetch or create album
+    const album = await this.getOrCreateAlbum(
+      space,
+      albumId,
+      albumName,
+      artistId,
+      artistName,
+      metadata.year,
+      metadata.genre,
+      artworkBlobId,
+      artworkKey
+    );
+    if (!album.track_ids.includes(trackId)) {
+      album.track_ids.push(trackId);
+      await space.setAlbum(album);
+    }
+
+    // Save track
+    await space.setTrack(track);
+
+    // Update search index
+    await this.updateSearchIndex(space, track);
+
+    return track;
+  }
+
+  /**
+   * Get existing artist or create a new one.
+   */
+  private async getOrCreateArtist(
+    space: MusicSpaceService,
+    artistId: string,
+    artistName: string
+  ): Promise<Artist> {
+    try {
+      return await space.getArtist(artistId);
+    } catch {
+      // Artist doesn't exist, create new
+      const artist: Artist = {
+        artist_id: artistId,
+        name: artistName,
+        album_ids: [],
+      };
+      await space.setArtist(artist);
+      return artist;
+    }
+  }
+
+  /**
+   * Get existing album or create a new one.
+   * If no artwork is provided, attempts to fetch from iTunes.
+   */
+  private async getOrCreateAlbum(
+    space: MusicSpaceService,
+    albumId: string,
+    albumName: string,
+    artistId: string,
+    artistName: string,
+    year?: number,
+    genre?: string,
+    artworkBlobId?: string,
+    artworkKey?: string
+  ): Promise<Album> {
+    try {
+      const existing = await space.getAlbum(albumId);
+      // Update artwork if this track has it and album doesn't
+      if (artworkBlobId && !existing.artwork_blob_id) {
+        existing.artwork_blob_id = artworkBlobId;
+        existing.artwork_encryption = artworkKey ? { method: 'file', key: artworkKey } : undefined;
+      }
+      return existing;
+    } catch {
+      // Album doesn't exist, create new
+      // Try to fetch artwork from iTunes if not provided
+      if (!artworkBlobId && artistName !== 'Unknown Artist' && albumName !== 'Unknown Album') {
+        const fetched = await this.fetchItunesArtwork(artistName, albumName, space);
+        if (fetched) {
+          artworkBlobId = fetched.blobId;
+          artworkKey = fetched.encryptionKey;
+        }
+      }
+
+      const album: Album = {
+        album_id: albumId,
+        title: albumName,
+        artist_id: artistId,
+        artist_name: artistName,
+        year,
+        genre,
+        artwork_blob_id: artworkBlobId,
+        artwork_encryption: artworkKey ? { method: 'file', key: artworkKey } : undefined,
+        track_ids: [],
+      };
+      await space.setAlbum(album);
+      return album;
+    }
+  }
+
+  /**
+   * Fetch album artwork from iTunes Search API.
+   * Returns null if not found or on error.
+   */
+  private async fetchItunesArtwork(
+    artistName: string,
+    albumName: string,
+    space: MusicSpaceService
+  ): Promise<{ blobId: string; encryptionKey: string } | null> {
+    try {
+      // Search iTunes for the album
+      const query = `${artistName} ${albumName}`;
+      const url = `${ITUNES_SEARCH_URL}?term=${encodeURIComponent(query)}&entity=album&limit=5`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) {
+        return null;
+      }
+
+      // Find best matching result (prefer exact album name match)
+      const normalizedAlbum = albumName.toLowerCase();
+      const match = data.results.find(
+        (r: { collectionName?: string }) =>
+          r.collectionName?.toLowerCase() === normalizedAlbum
+      ) ?? data.results[0];
+
+      // Get artwork URL and scale up to desired size
+      const artworkUrl = match.artworkUrl100;
+      if (!artworkUrl) {
+        return null;
+      }
+
+      // iTunes URLs use "100x100" format, replace with larger size
+      const highResUrl = artworkUrl.replace('100x100', `${ARTWORK_SIZE}x${ARTWORK_SIZE}`);
+
+      // Fetch the artwork image
+      const imageResponse = await fetch(highResUrl);
+      if (!imageResponse.ok) {
+        return null;
+      }
+
+      const imageData = await imageResponse.arrayBuffer();
+
+      // Upload encrypted artwork
+      return space.uploadArtworkBlob(imageData);
+    } catch (err) {
+      console.warn('Failed to fetch iTunes artwork:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Update the search index with a new track.
+   */
+  private async updateSearchIndex(space: MusicSpaceService, track: Track): Promise<void> {
+    let index: SearchIndex;
+    try {
+      index = await space.getSearchIndex();
+    } catch {
+      // Index doesn't exist, create new
+      index = { tracks: [], last_updated: 0 };
+    }
+
+    // Check if track already exists in index
+    const existingIdx = index.tracks.findIndex((t) => t.id === track.track_id);
+    const entry = {
+      id: track.track_id,
+      title: track.title,
+      artist: track.artist_name,
+      album: track.album_name,
+      duration_ms: track.duration_ms,
+    };
+
+    if (existingIdx >= 0) {
+      index.tracks[existingIdx] = entry;
+    } else {
+      index.tracks.push(entry);
+    }
+
+    index.last_updated = Date.now();
+    await space.setSearchIndex(index);
   }
 }
 
