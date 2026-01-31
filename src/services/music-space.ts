@@ -5,7 +5,7 @@
  * providing music-specific operations for library management.
  */
 
-import { Space, type KeyPair } from 'reeeductio';
+import { Space, type KeyPair, bytesToString, stringToBytes } from 'reeeductio';
 import type { Track, Album, Artist, SearchIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
 
@@ -63,32 +63,32 @@ export class MusicSpaceService {
    * Get the search index for fast client-side filtering.
    */
   async getSearchIndex(): Promise<SearchIndex> {
-    const data = await this.space.getEncryptedState('library/index');
-    return JSON.parse(data) as SearchIndex;
+    const data = await this.space.getEncryptedData('library/index');
+    return JSON.parse(bytesToString(data)) as SearchIndex;
   }
 
   /**
    * Update the search index.
    */
   async setSearchIndex(index: SearchIndex): Promise<void> {
-    await this.space.setEncryptedState('library/index', JSON.stringify(index));
+    await this.space.setEncryptedData('library/index', stringToBytes(JSON.stringify(index)));
   }
 
   /**
    * Get track metadata by ID.
    */
   async getTrack(trackId: string): Promise<Track> {
-    const data = await this.space.getEncryptedState(`library/tracks/${trackId}`);
-    return JSON.parse(data) as Track;
+    const data = await this.space.getEncryptedData(`library/tracks/${trackId}`);
+    return JSON.parse(bytesToString(data)) as Track;
   }
 
   /**
    * Save track metadata.
    */
   async setTrack(track: Track): Promise<void> {
-    await this.space.setEncryptedState(
+    await this.space.setEncryptedData(
       `library/tracks/${track.track_id}`,
-      JSON.stringify(track)
+      stringToBytes(JSON.stringify(track))
     );
   }
 
@@ -96,17 +96,17 @@ export class MusicSpaceService {
    * Get album metadata by ID.
    */
   async getAlbum(albumId: string): Promise<Album> {
-    const data = await this.space.getEncryptedState(`library/albums/${albumId}`);
-    return JSON.parse(data) as Album;
+    const data = await this.space.getEncryptedData(`library/albums/${albumId}`);
+    return JSON.parse(bytesToString(data)) as Album;
   }
 
   /**
    * Save album metadata.
    */
   async setAlbum(album: Album): Promise<void> {
-    await this.space.setEncryptedState(
+    await this.space.setEncryptedData(
       `library/albums/${album.album_id}`,
-      JSON.stringify(album)
+      stringToBytes(JSON.stringify(album))
     );
   }
 
@@ -114,17 +114,17 @@ export class MusicSpaceService {
    * Get artist metadata by ID.
    */
   async getArtist(artistId: string): Promise<Artist> {
-    const data = await this.space.getEncryptedState(`library/artists/${artistId}`);
-    return JSON.parse(data) as Artist;
+    const data = await this.space.getEncryptedData(`library/artists/${artistId}`);
+    return JSON.parse(bytesToString(data)) as Artist;
   }
 
   /**
    * Save artist metadata.
    */
   async setArtist(artist: Artist): Promise<void> {
-    await this.space.setEncryptedState(
+    await this.space.setEncryptedData(
       `library/artists/${artist.artist_id}`,
-      JSON.stringify(artist)
+      stringToBytes(JSON.stringify(artist))
     );
   }
 
@@ -192,7 +192,7 @@ export class MusicSpaceService {
   async getUserState<T>(path: string): Promise<T> {
     const fullPath = `user/${this.userId}/${path}`;
     const data = await this.space.getEncryptedState(fullPath);
-    return JSON.parse(data) as T;
+    return JSON.parse(bytesToString(data)) as T;
   }
 
   /**
@@ -200,7 +200,7 @@ export class MusicSpaceService {
    */
   async setUserState<T>(path: string, data: T): Promise<void> {
     const fullPath = `user/${this.userId}/${path}`;
-    await this.space.setEncryptedState(fullPath, JSON.stringify(data));
+    await this.space.setEncryptedState(fullPath, stringToBytes(JSON.stringify(data)));
   }
 
   // ============================================================
