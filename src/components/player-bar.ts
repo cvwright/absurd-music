@@ -6,7 +6,9 @@
  */
 
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
+import type { PlaybackService, PlaybackEvent } from '@/services/playback.js';
+import type { Track } from '@/types/index.js';
 
 @customElement('player-bar')
 export class PlayerBar extends LitElement {
@@ -125,6 +127,20 @@ export class PlayerBar extends LitElement {
       height: 16px;
     }
 
+    .play-btn svg.loading {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .play-btn:disabled {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
     /* Progress Bar */
     .progress-container {
       display: flex;
@@ -207,8 +223,14 @@ export class PlayerBar extends LitElement {
     }
   `;
 
+  @property({ attribute: false })
+  playbackService: PlaybackService | null = null;
+
   @state()
   private isPlaying = false;
+
+  @state()
+  private isLoading = false;
 
   @state()
   private currentTime = 0;
@@ -225,9 +247,82 @@ export class PlayerBar extends LitElement {
   @state()
   private repeat: 'none' | 'all' | 'one' = 'none';
 
-  // Placeholder - will be connected to PlaybackService
   @state()
-  private currentTrack: { title: string; artist: string; artwork?: string } | null = null;
+  private currentTrack: Track | null = null;
+
+  private unsubscribe: (() => void) | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this.subscribeToPlayback();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+  }
+
+  override updated(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('playbackService')) {
+      this.unsubscribe?.();
+      this.subscribeToPlayback();
+    }
+  }
+
+  private subscribeToPlayback() {
+    if (!this.playbackService) return;
+
+    // Sync initial state
+    this.volume = this.playbackService.getVolume() * 100;
+    const queue = this.playbackService.getQueue();
+    this.shuffle = queue.shuffle_enabled;
+    this.repeat = queue.repeat_mode;
+    this.currentTrack = this.playbackService.getCurrentTrack();
+    if (this.currentTrack) {
+      this.duration = this.currentTrack.duration_ms;
+    }
+
+    this.unsubscribe = this.playbackService.on((event: PlaybackEvent) => {
+      this.handlePlaybackEvent(event);
+    });
+  }
+
+  private handlePlaybackEvent(event: PlaybackEvent) {
+    switch (event.type) {
+      case 'play':
+        this.isPlaying = true;
+        this.isLoading = false;
+        break;
+      case 'pause':
+        this.isPlaying = false;
+        break;
+      case 'loading':
+        this.isLoading = true;
+        break;
+      case 'loaded':
+        this.isLoading = false;
+        this.currentTrack = this.playbackService?.getCurrentTrack() ?? null;
+        if (this.currentTrack) {
+          this.duration = this.currentTrack.duration_ms;
+        }
+        break;
+      case 'timeupdate':
+        this.currentTime = event.position_ms;
+        break;
+      case 'ended':
+        this.isPlaying = false;
+        break;
+      case 'queuechange':
+        this.shuffle = event.queue.shuffle_enabled;
+        this.repeat = event.queue.repeat_mode;
+        break;
+      case 'error':
+        this.isLoading = false;
+        console.error('Playback error:', event.error);
+        break;
+    }
+  }
 
   render() {
     return html`
@@ -235,14 +330,10 @@ export class PlayerBar extends LitElement {
       <div class="now-playing">
         ${this.currentTrack
           ? html`
-              <div class="artwork">
-                ${this.currentTrack.artwork
-                  ? html`<img src=${this.currentTrack.artwork} alt="Album art" />`
-                  : null}
-              </div>
+              <div class="artwork"></div>
               <div class="track-info">
                 <div class="track-title">${this.currentTrack.title}</div>
-                <div class="track-artist">${this.currentTrack.artist}</div>
+                <div class="track-artist">${this.currentTrack.artist_name}</div>
               </div>
             `
           : html`<span class="placeholder">No track playing</span>`}
@@ -267,8 +358,12 @@ export class PlayerBar extends LitElement {
             </svg>
           </button>
 
-          <button class="control-btn play-btn" @click=${this.togglePlay}>
-            ${this.isPlaying
+          <button class="control-btn play-btn" @click=${this.togglePlay} ?disabled=${this.isLoading}>
+            ${this.isLoading
+              ? html`<svg viewBox="0 0 24 24" fill="currentColor" class="loading">
+                  <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8z"/>
+                </svg>`
+              : this.isPlaying
               ? html`<svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                 </svg>`
@@ -343,50 +438,58 @@ export class PlayerBar extends LitElement {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  private togglePlay() {
-    this.isPlaying = !this.isPlaying;
-    // TODO: Connect to PlaybackService
+  private async togglePlay() {
+    if (!this.playbackService) return;
+    await this.playbackService.togglePlayPause();
   }
 
-  private previous() {
-    // TODO: Connect to PlaybackService
+  private async previous() {
+    if (!this.playbackService) return;
+    await this.playbackService.previous();
   }
 
-  private next() {
-    // TODO: Connect to PlaybackService
+  private async next() {
+    if (!this.playbackService) return;
+    await this.playbackService.next();
   }
 
   private toggleShuffle() {
-    this.shuffle = !this.shuffle;
-    // TODO: Connect to PlaybackService
+    if (!this.playbackService) return;
+    this.playbackService.toggleShuffle();
   }
 
   private cycleRepeat() {
-    const modes: Array<'none' | 'all' | 'one'> = ['none', 'all', 'one'];
-    const currentIndex = modes.indexOf(this.repeat);
-    this.repeat = modes[(currentIndex + 1) % modes.length];
-    // TODO: Connect to PlaybackService
+    if (!this.playbackService) return;
+    this.playbackService.cycleRepeat();
   }
 
   private handleSeek(e: MouseEvent) {
+    if (!this.playbackService) return;
     const bar = e.currentTarget as HTMLElement;
     const rect = bar.getBoundingClientRect();
     const percentage = (e.clientX - rect.left) / rect.width;
-    this.currentTime = percentage * this.duration;
-    // TODO: Connect to PlaybackService
+    const positionMs = percentage * this.duration;
+    this.playbackService.seek(positionMs);
   }
 
   private handleVolumeChange(e: MouseEvent) {
+    if (!this.playbackService) return;
     const bar = e.currentTarget as HTMLElement;
     const rect = bar.getBoundingClientRect();
     const percentage = (e.clientX - rect.left) / rect.width;
     this.volume = Math.round(percentage * 100);
-    // TODO: Connect to PlaybackService
+    this.playbackService.setVolume(percentage);
   }
 
   private toggleMute() {
-    this.volume = this.volume > 0 ? 0 : 80;
-    // TODO: Connect to PlaybackService
+    if (!this.playbackService) return;
+    if (this.volume > 0) {
+      this.playbackService.setVolume(0);
+      this.volume = 0;
+    } else {
+      this.playbackService.setVolume(0.8);
+      this.volume = 80;
+    }
   }
 }
 

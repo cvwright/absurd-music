@@ -10,6 +10,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space.js';
+import { PlaybackService } from '@/services/playback.js';
+import { CacheService } from '@/services/cache.js';
 import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
 
 import { setLogLevel } from 'reeeductio';
@@ -77,6 +79,8 @@ export class MusicApp extends LitElement {
   private authenticated = false;
 
   private musicSpace: MusicSpaceService | null = null;
+  private playbackService = new PlaybackService();
+  private cacheService = new CacheService();
 
   @state()
   private currentView: View = 'library';
@@ -95,12 +99,19 @@ export class MusicApp extends LitElement {
       try {
         this.musicSpace = new MusicSpaceService(savedConfig);
         await this.musicSpace.authenticate();
+        await this.initServices();
         this.authenticated = true;
       } catch {
         // Saved credentials failed, clear them and show login
         clearCredentials();
       }
     }
+  }
+
+  private async initServices() {
+    if (!this.musicSpace) return;
+    await this.cacheService.init();
+    this.playbackService.init(this.musicSpace, this.cacheService);
   }
 
   render() {
@@ -116,12 +127,12 @@ export class MusicApp extends LitElement {
         ></app-sidebar>
       </aside>
 
-      <main class="main-content">
+      <main class="main-content" @play-track=${this.handlePlayTrack}>
         ${this.renderView()}
       </main>
 
       <footer class="player-bar">
-        <player-bar></player-bar>
+        <player-bar .playbackService=${this.playbackService}></player-bar>
       </footer>
     `;
   }
@@ -147,6 +158,7 @@ export class MusicApp extends LitElement {
     try {
       this.musicSpace = new MusicSpaceService(e.detail);
       await this.musicSpace.authenticate();
+      await this.initServices();
       saveCredentials(e.detail);
       this.authenticated = true;
     } catch (err) {
@@ -161,6 +173,24 @@ export class MusicApp extends LitElement {
   private handleNavigate(e: CustomEvent<{ view: View; params?: Record<string, string> }>) {
     this.currentView = e.detail.view;
     this.viewParams = e.detail.params ?? {};
+  }
+
+  private async handlePlayTrack(e: CustomEvent<{ trackId: string }>) {
+    if (!this.musicSpace) return;
+
+    try {
+      const track = await this.musicSpace.getTrack(e.detail.trackId);
+
+      // Set queue from library and play the selected track
+      const index = await this.musicSpace.getSearchIndex();
+      const trackIds = index.tracks.map(t => t.id);
+      const startIndex = trackIds.indexOf(e.detail.trackId);
+
+      this.playbackService.setQueue(trackIds, startIndex >= 0 ? startIndex : 0);
+      await this.playbackService.playTrack(track);
+    } catch (err) {
+      console.error('Failed to play track:', err);
+    }
   }
 }
 
