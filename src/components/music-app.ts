@@ -142,7 +142,11 @@ export class MusicApp extends LitElement {
   private renderView() {
     switch (this.currentView) {
       case 'library':
-        return html`<library-view .musicSpace=${this.musicSpace} .cacheService=${this.cacheService}></library-view>`;
+        return html`<library-view
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+          .initialTab=${this.viewParams.tab || 'songs'}
+        ></library-view>`;
       case 'album':
         return html`<album-view
           .albumId=${this.viewParams.id}
@@ -160,7 +164,11 @@ export class MusicApp extends LitElement {
       case 'search':
         return html`<div>Search view</div>`;
       default:
-        return html`<library-view .musicSpace=${this.musicSpace} .cacheService=${this.cacheService}></library-view>`;
+        return html`<library-view
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+          .initialTab=${this.viewParams.tab || 'songs'}
+        ></library-view>`;
     }
   }
 

@@ -300,6 +300,9 @@ export class LibraryView extends LitElement {
   @property({ attribute: false })
   cacheService: CacheService | null = null;
 
+  @property({ type: String })
+  initialTab: Tab = 'songs';
+
   @state()
   private activeTab: Tab = 'songs';
 
@@ -338,6 +341,9 @@ export class LibraryView extends LitElement {
   override updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('musicSpace') && this.musicSpace) {
       this.loadLibrary();
+    }
+    if (changedProperties.has('initialTab') && this.initialTab) {
+      this.activeTab = this.initialTab;
     }
   }
 
