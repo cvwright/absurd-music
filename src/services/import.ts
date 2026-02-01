@@ -170,8 +170,12 @@ class ImportServiceImpl {
     const artistName = metadata.artist ?? 'Unknown Artist';
     const albumName = metadata.album ?? 'Unknown Album';
 
+    console.log("Importing track", artistName, "-", metadata.title);
+
     // Generate deterministic IDs
     const audioBytes = await metadata.file.arrayBuffer();
+    console.log("Audio file is", audioBytes.byteLength, "bytes");
+
     const [trackId, artistId, albumId] = await Promise.all([
       space.generateTrackId(audioBytes),
       space.generateArtistId(artistName),
@@ -179,8 +183,10 @@ class ImportServiceImpl {
     ]);
 
     // Upload audio blob (encrypted)
+    console.log("Uploading audio blob...");
     const { blobId: audioBlobId, encryptionKey: audioKey } =
       await space.uploadAudioBlob(audioBytes);
+    console.log("Audio blob uploaded successfully");
 
     // Upload artwork blob if present
     let artworkBlobId: string | undefined;
@@ -188,9 +194,13 @@ class ImportServiceImpl {
     if (metadata.artwork) {
       // Copy to new ArrayBuffer to handle SharedArrayBuffer and offset cases
       const artworkBuffer = new Uint8Array(metadata.artwork.data).buffer as ArrayBuffer;
+      console.log("Uploading", artworkBuffer.byteLength, "bytes of artwork blob");
       const result = await space.uploadArtworkBlob(artworkBuffer);
+      console.log("Artwork blob uploaded successfully");
       artworkBlobId = result.blobId;
       artworkKey = result.encryptionKey;
+    } else {
+      console.log("No artwork to upload");
     }
 
     // Create track record
@@ -214,9 +224,11 @@ class ImportServiceImpl {
       artwork_encryption: artworkKey ? { method: 'file', key: artworkKey } : undefined,
       added_at: Date.now(),
     };
+    console.log("Generated track with id", trackId);
 
     // Fetch or create artist
     const artist = await this.getOrCreateArtist(space, artistId, artistName);
+    console.log("Got artist with id =", artistId);
     if (!artist.album_ids.includes(albumId)) {
       artist.album_ids.push(albumId);
       await space.setArtist(artist);
@@ -234,16 +246,21 @@ class ImportServiceImpl {
       artworkBlobId,
       artworkKey
     );
+    console.log("Got album with id =", albumId);
     if (!album.track_ids.includes(trackId)) {
       album.track_ids.push(trackId);
       await space.setAlbum(album);
     }
 
     // Save track
+    console.log("Saving track");
     await space.setTrack(track);
+    console.log("Track saved successfully");
 
     // Update search index
+    console.log("Updating search index");
     await this.updateSearchIndex(space, track);
+    console.log("Search index updated successfully");
 
     return track;
   }

@@ -12,6 +12,10 @@ import { customElement, state } from 'lit/decorators.js';
 import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space.js';
 import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
 
+import { setLogLevel } from 'reeeductio';
+setLogLevel('debug');
+
+
 // Import child components
 import './player-bar.js';
 import './sidebar.js';
@@ -125,7 +129,7 @@ export class MusicApp extends LitElement {
   private renderView() {
     switch (this.currentView) {
       case 'library':
-        return html`<library-view></library-view>`;
+        return html`<library-view .musicSpace=${this.musicSpace}></library-view>`;
       case 'album':
         return html`<div>Album view: ${this.viewParams.id}</div>`;
       case 'artist':
@@ -135,7 +139,7 @@ export class MusicApp extends LitElement {
       case 'search':
         return html`<div>Search view</div>`;
       default:
-        return html`<library-view></library-view>`;
+        return html`<library-view .musicSpace=${this.musicSpace}></library-view>`;
     }
   }
 

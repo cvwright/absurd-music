@@ -156,6 +156,8 @@ export class MusicSpaceService {
    * @returns Object with blobId and base64-encoded DEK
    */
   async uploadAudioBlob(audioData: ArrayBuffer): Promise<{ blobId: string; encryptionKey: string }> {
+    // FIXME: Should just use this.space.encryptAndUploadBlob()
+    
     // Generate random DEK and encrypt
     const { encrypted, key } = await this.crypto.encryptBlob(new Uint8Array(audioData));
 
