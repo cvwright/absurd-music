@@ -140,7 +140,7 @@ export class MusicApp extends LitElement {
   private renderView() {
     switch (this.currentView) {
       case 'library':
-        return html`<library-view .musicSpace=${this.musicSpace}></library-view>`;
+        return html`<library-view .musicSpace=${this.musicSpace} .cacheService=${this.cacheService}></library-view>`;
       case 'album':
         return html`<div>Album view: ${this.viewParams.id}</div>`;
       case 'artist':
@@ -150,7 +150,7 @@ export class MusicApp extends LitElement {
       case 'search':
         return html`<div>Search view</div>`;
       default:
-        return html`<library-view .musicSpace=${this.musicSpace}></library-view>`;
+        return html`<library-view .musicSpace=${this.musicSpace} .cacheService=${this.cacheService}></library-view>`;
     }
   }
 

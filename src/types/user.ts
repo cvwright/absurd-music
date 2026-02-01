@@ -92,3 +92,21 @@ export interface CachedTrack {
   /** Size in bytes */
   size: number;
 }
+
+/**
+ * Cached artwork for IndexedDB
+ */
+export interface CachedArtwork {
+  /** Artwork blob ID (shared across tracks on same album) */
+  blobId: string;
+  /** Decrypted image data */
+  imageData: ArrayBuffer;
+  /** MIME type (e.g., 'image/jpeg') */
+  mimeType: string;
+  /** When cached (Unix timestamp) */
+  cachedAt: number;
+  /** When last accessed (for LRU eviction) */
+  lastAccessed: number;
+  /** Size in bytes */
+  size: number;
+}

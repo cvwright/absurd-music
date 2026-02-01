@@ -5,11 +5,12 @@
  * Provides LRU eviction when cache size limit is reached.
  */
 
-import type { CachedTrack, CachePreferences } from '@/types/index.js';
+import type { CachedTrack, CachedArtwork, CachePreferences } from '@/types/index.js';
 
 const DB_NAME = 'music-player-cache';
-const DB_VERSION = 1;
-const STORE_NAME = 'tracks';
+const DB_VERSION = 2;
+const TRACKS_STORE = 'tracks';
+const ARTWORK_STORE = 'artwork';
 
 const DEFAULT_PREFERENCES: CachePreferences = {
   max_size_bytes: 2 * 1024 * 1024 * 1024, // 2GB
@@ -55,11 +56,18 @@ export class CacheService {
         const db = (event.target as IDBOpenDBRequest).result;
 
         // Create tracks store with indices
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'trackId' });
+        if (!db.objectStoreNames.contains(TRACKS_STORE)) {
+          const store = db.createObjectStore(TRACKS_STORE, { keyPath: 'trackId' });
           store.createIndex('cachedAt', 'cachedAt', { unique: false });
           store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
           store.createIndex('size', 'size', { unique: false });
+        }
+
+        // Create artwork store with indices
+        if (!db.objectStoreNames.contains(ARTWORK_STORE)) {
+          const store = db.createObjectStore(ARTWORK_STORE, { keyPath: 'blobId' });
+          store.createIndex('cachedAt', 'cachedAt', { unique: false });
+          store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
         }
       };
     });
@@ -79,7 +87,7 @@ export class CacheService {
     const db = this.ensureDb();
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
+      const tx = db.transaction(TRACKS_STORE, 'readonly');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.openCursor();
 
@@ -107,7 +115,7 @@ export class CacheService {
     const db = this.ensureDb();
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.get(trackId);
 
@@ -153,7 +161,7 @@ export class CacheService {
     };
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.put(track);
 
@@ -177,7 +185,7 @@ export class CacheService {
     if (!track) return;
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.delete(trackId);
 
@@ -197,7 +205,7 @@ export class CacheService {
     const db = this.ensureDb();
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
+      const tx = db.transaction(TRACKS_STORE, 'readonly');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.count(IDBKeyRange.only(trackId));
 
@@ -213,7 +221,7 @@ export class CacheService {
     const db = this.ensureDb();
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const index = store.index('lastAccessed');
       const request = index.openCursor();
@@ -247,7 +255,7 @@ export class CacheService {
     const cutoff = Date.now() - maxAge;
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const index = store.index('cachedAt');
       const range = IDBKeyRange.upperBound(cutoff);
@@ -280,7 +288,7 @@ export class CacheService {
     const db = this.ensureDb();
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const tx = db.transaction(TRACKS_STORE, 'readwrite');
       const store = tx.objectStore(tx.objectStoreNames[0]);
       const request = store.clear();
 
@@ -312,5 +320,97 @@ export class CacheService {
    */
   setPreferences(preferences: Partial<CachePreferences>): void {
     this.preferences = { ...this.preferences, ...preferences };
+  }
+
+  // ============================================================
+  // Artwork Caching
+  // ============================================================
+
+  /**
+   * Get cached artwork by blob ID.
+   */
+  async getArtwork(blobId: string): Promise<CachedArtwork | null> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ARTWORK_STORE, 'readwrite');
+      const store = tx.objectStore(ARTWORK_STORE);
+      const request = store.get(blobId);
+
+      request.onsuccess = () => {
+        const artwork = request.result as CachedArtwork | undefined;
+        if (artwork) {
+          // Update last accessed time
+          artwork.lastAccessed = Date.now();
+          store.put(artwork);
+          resolve(artwork);
+        } else {
+          resolve(null);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Cache artwork.
+   */
+  async cacheArtwork(
+    blobId: string,
+    imageData: ArrayBuffer,
+    mimeType: string
+  ): Promise<void> {
+    const db = this.ensureDb();
+
+    const artwork: CachedArtwork = {
+      blobId,
+      imageData,
+      mimeType,
+      cachedAt: Date.now(),
+      lastAccessed: Date.now(),
+      size: imageData.byteLength,
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ARTWORK_STORE, 'readwrite');
+      const store = tx.objectStore(ARTWORK_STORE);
+      const request = store.put(artwork);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Check if artwork is cached.
+   */
+  async hasArtwork(blobId: string): Promise<boolean> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ARTWORK_STORE, 'readonly');
+      const store = tx.objectStore(ARTWORK_STORE);
+      const request = store.count(IDBKeyRange.only(blobId));
+
+      request.onsuccess = () => resolve(request.result > 0);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Clear all cached artwork.
+   */
+  async clearArtwork(): Promise<void> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ARTWORK_STORE, 'readwrite');
+      const store = tx.objectStore(ARTWORK_STORE);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   }
 }

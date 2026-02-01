@@ -6,8 +6,8 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { ImportService, MusicSpaceService } from '@/services/index.js';
-import type { ParsedTrackMetadata, SearchIndex, Album, Artist } from '@/types/index.js';
+import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
+import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track } from '@/types/index.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
 
@@ -17,6 +17,8 @@ interface TrackEntry {
   artist: string;
   album: string;
   duration_ms: number;
+  artwork_blob_id?: string;
+  artwork_blob_key?: string;
 }
 
 @customElement('library-view')
@@ -31,10 +33,38 @@ export class LibraryView extends LitElement {
       margin-bottom: var(--spacing-xl);
     }
 
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--spacing-lg);
+    }
+
     h1 {
       font-size: var(--font-size-xxxl);
       font-weight: 700;
-      margin-bottom: var(--spacing-lg);
+      margin: 0;
+    }
+
+    .header-import-btn {
+      padding: var(--spacing-xs) var(--spacing-md);
+      background-color: transparent;
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      border: 1px solid var(--color-text-subdued);
+      border-radius: var(--radius-full);
+      transition: all var(--transition-fast);
+    }
+
+    .header-import-btn:hover:not(:disabled) {
+      background-color: var(--color-bg-highlight);
+      border-color: var(--color-text-secondary);
+    }
+
+    .header-import-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     .tabs {
@@ -122,7 +152,7 @@ export class LibraryView extends LitElement {
 
     .track-header {
       display: grid;
-      grid-template-columns: 40px 1fr 1fr 100px;
+      grid-template-columns: 40px 40px 1fr 1fr 100px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       border-bottom: 1px solid var(--color-bg-highlight);
@@ -177,7 +207,7 @@ export class LibraryView extends LitElement {
     /* Track item */
     .track-item {
       display: grid;
-      grid-template-columns: 40px 1fr 1fr 100px;
+      grid-template-columns: 40px 40px 1fr 1fr 100px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       align-items: center;
@@ -193,6 +223,21 @@ export class LibraryView extends LitElement {
     .track-number {
       color: var(--color-text-subdued);
       text-align: center;
+    }
+
+    .track-artwork {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-xs);
+      background-color: var(--color-bg-highlight);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .track-artwork img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .track-info {
@@ -233,6 +278,9 @@ export class LibraryView extends LitElement {
   @property({ attribute: false })
   musicSpace: MusicSpaceService | null = null;
 
+  @property({ attribute: false })
+  cacheService: CacheService | null = null;
+
   @state()
   private activeTab: Tab = 'songs';
 
@@ -251,9 +299,21 @@ export class LibraryView extends LitElement {
   @state()
   private artists: Artist[] = [];
 
+  /** Cache of artwork object URLs by blob ID (shared across tracks on same album) */
+  private artworkUrls = new Map<string, string>();
+
   override connectedCallback() {
     super.connectedCallback();
     this.loadLibrary();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    // Revoke object URLs to free memory
+    for (const url of this.artworkUrls.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.artworkUrls.clear();
   }
 
   override updated(changedProperties: Map<string, unknown>) {
@@ -270,8 +330,35 @@ export class LibraryView extends LitElement {
 
     try {
       const index: SearchIndex = await this.musicSpace.getSearchIndex();
-      this.tracks = index.tracks;
-      this.isEmpty = this.tracks.length === 0;
+      this.isEmpty = index.tracks.length === 0;
+
+      // Fetch full track data to get artwork info
+      const trackEntries: TrackEntry[] = await Promise.all(
+        index.tracks.map(async (t) => {
+          try {
+            const fullTrack: Track = await this.musicSpace!.getTrack(t.id);
+            return {
+              id: t.id,
+              title: t.title,
+              artist: t.artist,
+              album: t.album,
+              duration_ms: t.duration_ms,
+              artwork_blob_id: fullTrack.artwork_blob_id,
+              artwork_blob_key: fullTrack.artwork_encryption?.key,
+            };
+          } catch {
+            // Fall back to index data if track fetch fails
+            return {
+              id: t.id,
+              title: t.title,
+              artist: t.artist,
+              album: t.album,
+              duration_ms: t.duration_ms,
+            };
+          }
+        })
+      );
+      this.tracks = trackEntries;
 
       // Build albums and artists from track data
       const albumMap = new Map<string, { title: string; artist: string }>();
@@ -315,7 +402,14 @@ export class LibraryView extends LitElement {
   render() {
     return html`
       <div class="header">
-        <h1>Your Library</h1>
+        <div class="header-row">
+          <h1>Your Library</h1>
+          ${!this.isEmpty ? html`
+            <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
+              ${this.importing ? 'Importing...' : 'Import'}
+            </button>
+          ` : ''}
+        </div>
         <div class="tabs">
           <button
             class="tab ${this.activeTab === 'songs' ? 'active' : ''}"
@@ -378,6 +472,7 @@ export class LibraryView extends LitElement {
       <div class="track-list">
         <div class="track-header">
           <span>#</span>
+          <span></span>
           <span>Title</span>
           <span>Album</span>
           <span>Duration</span>
@@ -385,6 +480,11 @@ export class LibraryView extends LitElement {
         ${this.tracks.map((track, index) => html`
           <div class="track-item" @click=${() => this.playTrack(track.id)}>
             <span class="track-number">${index + 1}</span>
+            <div class="track-artwork">
+              ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
+                ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
+                : html`${this.loadArtwork(track)}`}
+            </div>
             <div class="track-info">
               <span class="track-title">${track.title}</span>
               <span class="track-artist">${track.artist}</span>
@@ -410,6 +510,59 @@ export class LibraryView extends LitElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  /** Trigger artwork loading for a track (returns nothing, updates cache async). */
+  private loadArtwork(track: TrackEntry) {
+    const blobId = track.artwork_blob_id;
+    const blobKey = track.artwork_blob_key;
+    if (!blobId || !blobKey || !this.musicSpace) {
+      return '';
+    }
+    // Use blob ID as key since artwork is shared across tracks on same album
+    if (this.artworkUrls.has(blobId)) {
+      return '';
+    }
+
+    // Mark as loading to prevent duplicate requests
+    this.artworkUrls.set(blobId, '');
+
+    this.loadArtworkAsync(blobId, blobKey);
+    return '';
+  }
+
+  private async loadArtworkAsync(blobId: string, blobKey: string) {
+    try {
+      // Check IndexedDB cache first
+      if (this.cacheService) {
+        const cached = await this.cacheService.getArtwork(blobId);
+        if (cached) {
+          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const url = URL.createObjectURL(blob);
+          this.artworkUrls.set(blobId, url);
+          this.requestUpdate();
+          return;
+        }
+      }
+
+      // Download from server
+      const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
+      const mimeType = 'image/jpeg';
+
+      // Cache in IndexedDB for future sessions
+      if (this.cacheService) {
+        await this.cacheService.cacheArtwork(blobId, data, mimeType);
+      }
+
+      // Create object URL for display
+      const blob = new Blob([data], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      this.artworkUrls.set(blobId, url);
+      this.requestUpdate();
+    } catch (err) {
+      console.warn(`Failed to load artwork ${blobId}:`, err);
+      this.artworkUrls.delete(blobId);
+    }
   }
 
   private renderAlbumGrid() {
