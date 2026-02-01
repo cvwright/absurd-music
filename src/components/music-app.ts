@@ -23,6 +23,8 @@ import './player-bar.js';
 import './sidebar.js';
 import './library-view.js';
 import './login-view.js';
+import './album-view.js';
+import './artist-view.js';
 
 type View = 'library' | 'album' | 'artist' | 'playlist' | 'search';
 
@@ -127,7 +129,7 @@ export class MusicApp extends LitElement {
         ></app-sidebar>
       </aside>
 
-      <main class="main-content" @play-track=${this.handlePlayTrack}>
+      <main class="main-content" @play-track=${this.handlePlayTrack} @play-album=${this.handlePlayAlbum} @navigate=${this.handleNavigate}>
         ${this.renderView()}
       </main>
 
@@ -142,9 +144,17 @@ export class MusicApp extends LitElement {
       case 'library':
         return html`<library-view .musicSpace=${this.musicSpace} .cacheService=${this.cacheService}></library-view>`;
       case 'album':
-        return html`<div>Album view: ${this.viewParams.id}</div>`;
+        return html`<album-view
+          .albumId=${this.viewParams.id}
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+        ></album-view>`;
       case 'artist':
-        return html`<div>Artist view: ${this.viewParams.id}</div>`;
+        return html`<artist-view
+          .artistId=${this.viewParams.id}
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+        ></artist-view>`;
       case 'playlist':
         return html`<div>Playlist view: ${this.viewParams.id}</div>`;
       case 'search':
@@ -190,6 +200,20 @@ export class MusicApp extends LitElement {
       await this.playbackService.playTrack(track);
     } catch (err) {
       console.error('Failed to play track:', err);
+    }
+  }
+
+  private async handlePlayAlbum(e: CustomEvent<{ trackIds: string[]; startIndex: number }>) {
+    if (!this.musicSpace) return;
+
+    try {
+      const { trackIds, startIndex } = e.detail;
+      const track = await this.musicSpace.getTrack(trackIds[startIndex]);
+
+      this.playbackService.setQueue(trackIds, startIndex);
+      await this.playbackService.playTrack(track);
+    } catch (err) {
+      console.error('Failed to play album:', err);
     }
   }
 }

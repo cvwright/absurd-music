@@ -204,6 +204,25 @@ export class LibraryView extends LitElement {
       color: var(--color-text-secondary);
     }
 
+    .album-artwork img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .album-artwork.artist-avatar {
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .album-artwork.artist-avatar svg {
+      width: 60%;
+      height: 60%;
+      color: var(--color-text-subdued);
+    }
+
     /* Track item */
     .track-item {
       display: grid;
@@ -569,8 +588,12 @@ export class LibraryView extends LitElement {
     return html`
       <div class="album-grid">
         ${this.albums.map(album => html`
-          <div class="album-card">
-            <div class="album-artwork"></div>
+          <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
+            <div class="album-artwork">
+              ${this.getAlbumArtworkUrl(album.album_id)
+                ? html`<img src=${this.getAlbumArtworkUrl(album.album_id)!} alt="" />`
+                : ''}
+            </div>
             <div class="album-title">${album.title}</div>
             <div class="album-artist">${album.artist_name}</div>
           </div>
@@ -579,17 +602,47 @@ export class LibraryView extends LitElement {
     `;
   }
 
+  private getAlbumArtworkUrl(albumId: string): string | undefined {
+    // Find a track with this album to get its artwork
+    const track = this.tracks.find(t => `${t.artist}|${t.album}` === albumId);
+    if (track?.artwork_blob_id) {
+      return this.artworkUrls.get(track.artwork_blob_id);
+    }
+    return undefined;
+  }
+
+  private navigateToAlbum(albumId: string) {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: { view: 'album', params: { id: albumId } },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   private renderArtistList() {
     return html`
       <div class="album-grid">
         ${this.artists.map(artist => html`
-          <div class="album-card">
-            <div class="album-artwork"></div>
+          <div class="album-card" @click=${() => this.navigateToArtist(artist.artist_id)}>
+            <div class="album-artwork artist-avatar">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </div>
             <div class="album-title">${artist.name}</div>
+            <div class="album-artist">Artist</div>
           </div>
         `)}
       </div>
     `;
+  }
+
+  private navigateToArtist(artistId: string) {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: { view: 'artist', params: { id: artistId } },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private async openImport() {
