@@ -191,6 +191,7 @@ class ImportServiceImpl {
     // Upload artwork blob if present
     let artworkBlobId: string | undefined;
     let artworkKey: string | undefined;
+    let artworkMimeType: string | undefined;
     if (metadata.artwork) {
       // Copy to new ArrayBuffer to handle SharedArrayBuffer and offset cases
       const artworkBuffer = new Uint8Array(metadata.artwork.data).buffer as ArrayBuffer;
@@ -199,6 +200,7 @@ class ImportServiceImpl {
       console.log("Artwork blob uploaded successfully");
       artworkBlobId = result.blobId;
       artworkKey = result.encryptionKey;
+      artworkMimeType = metadata.artwork.mimeType;
     } else {
       console.log("No artwork to upload");
     }
@@ -214,6 +216,7 @@ class ImportServiceImpl {
       album_id: albumId,
       audio_blob_id: audioBlobId,
       artwork_blob_id: artworkBlobId,
+      artwork_mime_type: artworkMimeType,
       duration_ms: metadata.durationMs ?? 0,
       track_number: metadata.trackNumber,
       disc_number: metadata.discNumber,
@@ -244,12 +247,20 @@ class ImportServiceImpl {
       metadata.year,
       metadata.genre,
       artworkBlobId,
-      artworkKey
+      artworkKey,
+      artworkMimeType
     );
     console.log("Got album with id =", albumId);
     if (!album.track_ids.includes(trackId)) {
       album.track_ids.push(trackId);
       await space.setAlbum(album);
+    }
+
+    // If track has no artwork but album does (e.g., from iTunes), copy it to track
+    if (!track.artwork_blob_id && album.artwork_blob_id) {
+      track.artwork_blob_id = album.artwork_blob_id;
+      track.artwork_mime_type = album.artwork_mime_type;
+      track.artwork_encryption = album.artwork_encryption;
     }
 
     // Save track
@@ -300,13 +311,15 @@ class ImportServiceImpl {
     year?: number,
     genre?: string,
     artworkBlobId?: string,
-    artworkKey?: string
+    artworkKey?: string,
+    artworkMimeType?: string
   ): Promise<Album> {
     try {
       const existing = await space.getAlbum(albumId);
       // Update artwork if this track has it and album doesn't
       if (artworkBlobId && !existing.artwork_blob_id) {
         existing.artwork_blob_id = artworkBlobId;
+        existing.artwork_mime_type = artworkMimeType;
         existing.artwork_encryption = artworkKey ? { method: 'file', key: artworkKey } : undefined;
       }
       return existing;
@@ -314,10 +327,15 @@ class ImportServiceImpl {
       // Album doesn't exist, create new
       // Try to fetch artwork from iTunes if not provided
       if (!artworkBlobId && artistName !== 'Unknown Artist' && albumName !== 'Unknown Album') {
-        const fetched = await this.fetchItunesArtwork(artistName, albumName, space);
+        console.log("Querying iTunes for", artistName, "-", albumName);
+        const fetched = await this.fetchArtworkFromItunes(artistName, albumName, space);
         if (fetched) {
+          console.log("Fetched artwork blob id =", fetched.blobId);
           artworkBlobId = fetched.blobId;
           artworkKey = fetched.encryptionKey;
+          artworkMimeType = fetched.mimeType;
+        } else {
+          console.log("No iTunes match");
         }
       }
 
@@ -329,6 +347,7 @@ class ImportServiceImpl {
         year,
         genre,
         artwork_blob_id: artworkBlobId,
+        artwork_mime_type: artworkMimeType,
         artwork_encryption: artworkKey ? { method: 'file', key: artworkKey } : undefined,
         track_ids: [],
       };
@@ -341,11 +360,11 @@ class ImportServiceImpl {
    * Fetch album artwork from iTunes Search API.
    * Returns null if not found or on error.
    */
-  private async fetchItunesArtwork(
+  async fetchArtworkFromItunes(
     artistName: string,
     albumName: string,
     space: MusicSpaceService
-  ): Promise<{ blobId: string; encryptionKey: string } | null> {
+  ): Promise<{ blobId: string; encryptionKey: string; mimeType: string } | null> {
     try {
       // Search iTunes for the album
       const query = `${artistName} ${albumName}`;
@@ -380,13 +399,17 @@ class ImportServiceImpl {
       // Fetch the artwork image
       const imageResponse = await fetch(highResUrl);
       if (!imageResponse.ok) {
+        console.log("Failed to retrieve artwork from iTunes");
         return null;
       }
 
       const imageData = await imageResponse.arrayBuffer();
+      const mimeType = imageResponse.headers.get('content-type') ?? 'image/jpeg';
+      console.log("Received", imageData.byteLength, "bytes of artwork from iTunes, type:", mimeType);
 
       // Upload encrypted artwork
-      return space.uploadArtworkBlob(imageData);
+      const result = await space.uploadArtworkBlob(imageData);
+      return { ...result, mimeType };
     } catch (err) {
       console.warn('Failed to fetch iTunes artwork:', err);
       return null;

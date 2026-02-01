@@ -19,6 +19,7 @@ interface TrackEntry {
   duration_ms: number;
   artwork_blob_id?: string;
   artwork_blob_key?: string;
+  artwork_mime_type?: string;
 }
 
 @customElement('library-view')
@@ -370,6 +371,7 @@ export class LibraryView extends LitElement {
               duration_ms: t.duration_ms,
               artwork_blob_id: fullTrack.artwork_blob_id,
               artwork_blob_key: fullTrack.artwork_encryption?.key,
+              artwork_mime_type: fullTrack.artwork_mime_type,
             };
           } catch {
             // Fall back to index data if track fetch fails
@@ -541,6 +543,7 @@ export class LibraryView extends LitElement {
   private loadArtwork(track: TrackEntry) {
     const blobId = track.artwork_blob_id;
     const blobKey = track.artwork_blob_key;
+    const mimeType = track.artwork_mime_type;
     if (!blobId || !blobKey || !this.musicSpace) {
       return '';
     }
@@ -552,11 +555,11 @@ export class LibraryView extends LitElement {
     // Mark as loading to prevent duplicate requests
     this.artworkUrls.set(blobId, '');
 
-    this.loadArtworkAsync(blobId, blobKey);
+    this.loadArtworkAsync(blobId, blobKey, mimeType);
     return '';
   }
 
-  private async loadArtworkAsync(blobId: string, blobKey: string) {
+  private async loadArtworkAsync(blobId: string, blobKey: string, mimeType?: string) {
     try {
       // Check IndexedDB cache first
       if (this.cacheService) {
@@ -572,15 +575,15 @@ export class LibraryView extends LitElement {
 
       // Download from server
       const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
-      const mimeType = 'image/jpeg';
+      const resolvedMimeType = mimeType ?? 'image/jpeg';
 
       // Cache in IndexedDB for future sessions
       if (this.cacheService) {
-        await this.cacheService.cacheArtwork(blobId, data, mimeType);
+        await this.cacheService.cacheArtwork(blobId, data, resolvedMimeType);
       }
 
       // Create object URL for display
-      const blob = new Blob([data], { type: mimeType });
+      const blob = new Blob([data], { type: resolvedMimeType });
       const url = URL.createObjectURL(blob);
       this.artworkUrls.set(blobId, url);
       this.requestUpdate();

@@ -47,6 +47,8 @@ export interface Track {
   audio_blob_id: string;
   /** Blob ID for album artwork (shared with album) */
   artwork_blob_id?: string;
+  /** MIME type of artwork (e.g., 'image/jpeg', 'image/png') */
+  artwork_mime_type?: string;
 
   // Audio metadata
   /** Track duration in milliseconds */
@@ -99,6 +101,8 @@ export interface Album {
 
   /** Blob ID for album artwork */
   artwork_blob_id?: string;
+  /** MIME type of artwork (e.g., 'image/jpeg', 'image/png') */
+  artwork_mime_type?: string;
   /** Encryption info for artwork blob */
   artwork_encryption?: BlobEncryption;
 

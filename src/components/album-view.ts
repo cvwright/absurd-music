@@ -6,7 +6,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { MusicSpaceService, CacheService } from '@/services/index.js';
+import { MusicSpaceService, CacheService, ImportService } from '@/services/index.js';
 import type { Album, Track } from '@/types/index.js';
 
 @customElement('album-view')
@@ -208,6 +208,74 @@ export class AlbumView extends LitElement {
       min-height: 200px;
       color: var(--color-text-secondary);
     }
+
+    /* Menu button and dropdown */
+    .menu-container {
+      position: relative;
+    }
+
+    .menu-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+    }
+
+    .menu-btn:hover {
+      background-color: var(--color-bg-highlight);
+      color: var(--color-text-primary);
+    }
+
+    .menu-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .menu-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: var(--spacing-xs);
+      min-width: 200px;
+      background-color: var(--color-bg-elevated, #282828);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 16px 24px rgba(0, 0, 0, 0.3);
+      padding: var(--spacing-xs) 0;
+      z-index: 100;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      width: 100%;
+      padding: var(--spacing-sm) var(--spacing-md);
+      background: transparent;
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      text-align: left;
+      transition: background-color var(--transition-fast);
+    }
+
+    .menu-item:hover:not(:disabled) {
+      background-color: var(--color-bg-highlight);
+    }
+
+    .menu-item:disabled {
+      color: var(--color-text-subdued);
+      cursor: not-allowed;
+    }
+
+    .menu-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
   `;
 
   @property({ type: String })
@@ -234,16 +302,39 @@ export class AlbumView extends LitElement {
   @state()
   private artworkUrl = '';
 
+  @state()
+  private menuOpen = false;
+
+  @state()
+  private fetchingArtwork = false;
+
   override updated(changedProperties: Map<string, unknown>) {
     if ((changedProperties.has('albumId') || changedProperties.has('musicSpace')) && this.albumId && this.musicSpace) {
       this.loadAlbum();
     }
   }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    this.handleClickOutside = this.handleClickOutside.bind(this);
+    document.addEventListener('click', this.handleClickOutside);
+  }
+
   override disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener('click', this.handleClickOutside);
     if (this.artworkUrl) {
       URL.revokeObjectURL(this.artworkUrl);
+    }
+  }
+
+  private handleClickOutside(e: MouseEvent) {
+    if (this.menuOpen) {
+      const path = e.composedPath();
+      const menuContainer = this.shadowRoot?.querySelector('.menu-container');
+      if (menuContainer && !path.includes(menuContainer)) {
+        this.menuOpen = false;
+      }
     }
   }
 
@@ -312,6 +403,7 @@ export class AlbumView extends LitElement {
   private async loadArtwork() {
     const artworkBlobId = this.album?.artwork_blob_id || this.tracks[0]?.artwork_blob_id;
     const artworkKey = this.album?.artwork_encryption?.key || this.tracks[0]?.artwork_encryption?.key;
+    const artworkMimeType = this.album?.artwork_mime_type || this.tracks[0]?.artwork_mime_type || 'image/jpeg';
 
     if (!artworkBlobId || !artworkKey || !this.musicSpace) return;
 
@@ -331,10 +423,10 @@ export class AlbumView extends LitElement {
 
       // Cache for future
       if (this.cacheService) {
-        await this.cacheService.cacheArtwork(artworkBlobId, data, 'image/jpeg');
+        await this.cacheService.cacheArtwork(artworkBlobId, data, artworkMimeType);
       }
 
-      const blob = new Blob([data], { type: 'image/jpeg' });
+      const blob = new Blob([data], { type: artworkMimeType });
       this.artworkUrl = URL.createObjectURL(blob);
     } catch (err) {
       console.warn('Failed to load album artwork:', err);
@@ -397,6 +489,30 @@ export class AlbumView extends LitElement {
             <path d="M8 5v14l11-7z"/>
           </svg>
         </button>
+
+        <div class="menu-container">
+          <button class="menu-btn" @click=${this.toggleMenu}>
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="12" cy="19" r="2"/>
+            </svg>
+          </button>
+          ${this.menuOpen ? html`
+            <div class="menu-dropdown">
+              <button
+                class="menu-item"
+                @click=${this.downloadArtwork}
+                ?disabled=${this.fetchingArtwork || !!this.artworkUrl}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                ${this.fetchingArtwork ? 'Downloading...' : this.artworkUrl ? 'Artwork present' : 'Download artwork'}
+              </button>
+            </div>
+          ` : ''}
+        </div>
       </div>
 
       <div class="track-list">
@@ -467,6 +583,53 @@ export class AlbumView extends LitElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  private toggleMenu() {
+    this.menuOpen = !this.menuOpen;
+  }
+
+  private async downloadArtwork() {
+    if (!this.album || !this.musicSpace || this.fetchingArtwork) return;
+
+    this.fetchingArtwork = true;
+    this.menuOpen = false;
+
+    try {
+      // Use ImportService to fetch artwork from iTunes
+      const result = await ImportService.fetchArtworkFromItunes(
+        this.album.artist_name,
+        this.album.title,
+        this.musicSpace
+      );
+
+      if (result) {
+        // Update album with new artwork
+        this.album.artwork_blob_id = result.blobId;
+        this.album.artwork_mime_type = result.mimeType;
+        this.album.artwork_encryption = { method: 'file', key: result.encryptionKey };
+        await this.musicSpace.setAlbum(this.album);
+
+        // Update tracks to reference the album artwork
+        for (const track of this.tracks) {
+          if (!track.artwork_blob_id) {
+            track.artwork_blob_id = result.blobId;
+            track.artwork_mime_type = result.mimeType;
+            track.artwork_encryption = { method: 'file', key: result.encryptionKey };
+            await this.musicSpace.setTrack(track);
+          }
+        }
+
+        // Load and display the new artwork
+        await this.loadArtwork();
+      } else {
+        console.warn('No artwork found on iTunes for this album');
+      }
+    } catch (err) {
+      console.error('Failed to download artwork:', err);
+    } finally {
+      this.fetchingArtwork = false;
+    }
   }
 }
 

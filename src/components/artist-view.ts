@@ -384,6 +384,7 @@ export class ArtistView extends LitElement {
     for (const album of this.albums) {
       const artworkBlobId = album.artwork_blob_id;
       const artworkKey = album.artwork_encryption?.key;
+      const artworkMimeType = album.artwork_mime_type;
 
       if (!artworkBlobId || !artworkKey || !this.musicSpace) {
         // Try to get artwork from first track
@@ -391,7 +392,7 @@ export class ArtistView extends LitElement {
           try {
             const track = await this.musicSpace!.getTrack(album.track_ids[0]);
             if (track.artwork_blob_id && track.artwork_encryption?.key) {
-              await this.loadArtwork(album.album_id, track.artwork_blob_id, track.artwork_encryption.key);
+              await this.loadArtwork(album.album_id, track.artwork_blob_id, track.artwork_encryption.key, track.artwork_mime_type);
             }
           } catch {
             // Ignore
@@ -400,11 +401,11 @@ export class ArtistView extends LitElement {
         continue;
       }
 
-      await this.loadArtwork(album.album_id, artworkBlobId, artworkKey);
+      await this.loadArtwork(album.album_id, artworkBlobId, artworkKey, artworkMimeType);
     }
   }
 
-  private async loadArtwork(albumId: string, blobId: string, blobKey: string) {
+  private async loadArtwork(albumId: string, blobId: string, blobKey: string, mimeType?: string) {
     if (this.artworkUrls.has(albumId)) return;
 
     try {
@@ -422,13 +423,14 @@ export class ArtistView extends LitElement {
 
       // Download from server
       const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
+      const resolvedMimeType = mimeType ?? 'image/jpeg';
 
       // Cache for future
       if (this.cacheService) {
-        await this.cacheService.cacheArtwork(blobId, data, 'image/jpeg');
+        await this.cacheService.cacheArtwork(blobId, data, resolvedMimeType);
       }
 
-      const blob = new Blob([data], { type: 'image/jpeg' });
+      const blob = new Blob([data], { type: resolvedMimeType });
       const url = URL.createObjectURL(blob);
       this.artworkUrls.set(albumId, url);
       this.requestUpdate();
