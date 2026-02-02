@@ -312,6 +312,9 @@ export class AlbumView extends LitElement {
   @state()
   private fetchingArtwork = false;
 
+  @state()
+  private uploadingArtwork = false;
+
   override updated(changedProperties: Map<string, unknown>) {
     if ((changedProperties.has('albumId') || changedProperties.has('musicSpace')) && this.albumId && this.musicSpace) {
       this.loadAlbum();
@@ -504,6 +507,16 @@ export class AlbumView extends LitElement {
                     </svg>
                     ${this.fetchingArtwork ? 'Downloading...' : this.artworkUrl ? 'Artwork present' : 'Download artwork'}
                   </button>
+                  <button
+                    class="menu-item"
+                    @click=${this.uploadArtwork}
+                    ?disabled=${this.uploadingArtwork}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    ${this.uploadingArtwork ? 'Uploading...' : 'Upload artwork'}
+                  </button>
                 </div>
               ` : ''}
             </div>
@@ -634,6 +647,57 @@ export class AlbumView extends LitElement {
     } finally {
       this.fetchingArtwork = false;
     }
+  }
+
+  private async uploadArtwork() {
+    if (!this.album || !this.musicSpace || this.uploadingArtwork) return;
+
+    this.menuOpen = false;
+
+    // Create file input and trigger selection
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      this.uploadingArtwork = true;
+
+      try {
+        const imageData = await file.arrayBuffer();
+        const mimeType = file.type || 'image/jpeg';
+
+        // Upload encrypted artwork
+        const result = await this.musicSpace!.uploadArtworkBlob(imageData);
+
+        // Update album with new artwork
+        this.album!.artwork_blob_id = result.blobId;
+        this.album!.artwork_mime_type = mimeType;
+        this.album!.artwork_encryption = { method: 'file', key: result.encryptionKey };
+        await this.musicSpace!.setAlbum(this.album!);
+
+        // Update tracks to reference the album artwork
+        for (const track of this.tracks) {
+          if (!track.artwork_blob_id) {
+            track.artwork_blob_id = result.blobId;
+            track.artwork_mime_type = mimeType;
+            track.artwork_encryption = { method: 'file', key: result.encryptionKey };
+            await this.musicSpace!.setTrack(track);
+          }
+        }
+
+        // Load and display the new artwork
+        await this.loadArtwork();
+      } catch (err) {
+        console.error('Failed to upload artwork:', err);
+      } finally {
+        this.uploadingArtwork = false;
+      }
+    });
+
+    input.click();
   }
 }
 
