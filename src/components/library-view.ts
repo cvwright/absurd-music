@@ -7,7 +7,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
-import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track } from '@/types/index.js';
+import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification } from '@/types/index.js';
+import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
 
@@ -668,17 +669,46 @@ export class LibraryView extends LitElement {
     console.log(`Selected ${files.length} file(s), parsing metadata...`);
     this.importing = true;
 
+    // Track imports grouped by album
+    const albumTracks = new Map<string, string[]>();
+
     try {
       const parsed: ParsedTrackMetadata[] = await ImportService.parseFiles(files);
 
       // Import each track
       for (const metadata of parsed) {
         console.log(`Importing: ${metadata.artist ?? 'Unknown'} - ${metadata.title}`);
-        await ImportService.importTrack(metadata, this.musicSpace);
+        const track = await ImportService.importTrack(metadata, this.musicSpace);
         console.log("Import successful");
+
+        // Group by album
+        const tracks = albumTracks.get(track.album_id) ?? [];
+        tracks.push(track.track_id);
+        albumTracks.set(track.album_id, tracks);
       }
 
       console.log(`Successfully imported ${parsed.length} track(s)`);
+
+      // Publish import notification
+      if (albumTracks.size > 0) {
+        const notification: ImportNotification = {
+          albums: Object.fromEntries(albumTracks),
+          imported_at: Date.now(),
+        };
+
+        try {
+          await this.musicSpace.postMessage(
+            IMPORTS_TOPIC_ID,
+            IMPORT_BATCH_TYPE,
+            notification
+          );
+          console.log('Published import notification');
+        } catch (err) {
+          // Non-fatal: log but don't fail the import
+          console.warn('Failed to publish import notification:', err);
+        }
+      }
+
       await this.loadLibrary();
     } catch (err) {
       console.error('Import failed:', err);

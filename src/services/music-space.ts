@@ -5,7 +5,8 @@
  * providing music-specific operations for library management.
  */
 
-import { Space, type KeyPair, bytesToString, stringToBytes } from 'reeeductio';
+import { Space, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64 } from 'reeeductio';
+import type { MessageQuery, MessagesResponse, MessageCreated } from 'reeeductio';
 import type { Track, Album, Artist, SearchIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
 
@@ -239,5 +240,47 @@ export class MusicSpaceService {
    */
   async getWebSocketUrl(): Promise<string> {
     return this.space.getWebSocketConnectionUrl();
+  }
+
+  // ============================================================
+  // Message Operations
+  // ============================================================
+
+  /**
+   * Post an encrypted message to a topic.
+   *
+   * @param topicId - Topic identifier (e.g., "imports")
+   * @param msgType - Message type/category (e.g., "import_batch")
+   * @param data - Message data object (will be JSON serialized and encrypted)
+   * @returns MessageCreated with message_hash and server_timestamp
+   */
+  async postMessage<T>(topicId: string, msgType: string, data: T): Promise<MessageCreated> {
+    const dataBytes = stringToBytes(JSON.stringify(data));
+    return this.space.postEncryptedMessage(topicId, msgType, dataBytes);
+  }
+
+  /**
+   * Get messages from a topic.
+   *
+   * @param topicId - Topic identifier
+   * @param query - Optional query parameters (from, to, limit)
+   * @returns MessagesResponse with messages array
+   */
+  async getMessages(topicId: string, query?: MessageQuery): Promise<MessagesResponse> {
+    return this.space.getMessages(topicId, query);
+  }
+
+  /**
+   * Decrypt and parse a message's data field.
+   *
+   * @param topicId - Topic identifier (needed to derive decryption key)
+   * @param encryptedData - Base64-encoded encrypted data from message
+   * @returns Parsed JSON object
+   */
+  decryptMessageData<T>(topicId: string, encryptedData: string): T {
+    const topicKey = this.space.deriveTopicKey(topicId);
+    const encrypted = decodeBase64(encryptedData);
+    const decrypted = decryptAesGcm(encrypted, topicKey);
+    return JSON.parse(bytesToString(decrypted)) as T;
   }
 }

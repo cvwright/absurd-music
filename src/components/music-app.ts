@@ -25,8 +25,9 @@ import './library-view.js';
 import './login-view.js';
 import './album-view.js';
 import './artist-view.js';
+import './recently-added-view.js';
 
-type View = 'library' | 'album' | 'artist' | 'playlist' | 'search';
+type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent';
 
 @customElement('music-app')
 export class MusicApp extends LitElement {
@@ -167,6 +168,11 @@ export class MusicApp extends LitElement {
         return html`<div>Playlist view: ${this.viewParams.id}</div>`;
       case 'search':
         return html`<div>Search view</div>`;
+      case 'recent':
+        return html`<recently-added-view
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+        ></recently-added-view>`;
       default:
         return html`<library-view
           .musicSpace=${this.musicSpace}

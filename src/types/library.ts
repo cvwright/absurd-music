@@ -225,3 +225,21 @@ export interface SearchIndex {
   /** Unix timestamp of last index update */
   last_updated: number;
 }
+
+/**
+ * Import notification message published when tracks are added.
+ * Groups tracks by album (like Apple Music's Recently Added).
+ * Stored in the "imports" topic with type "import_batch".
+ */
+export interface ImportNotification {
+  /** Map of album_id -> track_ids imported into that album */
+  albums: Record<string, string[]>;
+  /** Unix timestamp when import completed */
+  imported_at: number;
+}
+
+/** Topic ID for import notifications */
+export const IMPORTS_TOPIC_ID = 'imports';
+
+/** Message type for import batch notifications */
+export const IMPORT_BATCH_TYPE = 'import_batch';
