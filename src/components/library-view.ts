@@ -402,14 +402,24 @@ export class LibraryView extends LitElement {
         }
       }
 
-      // Convert to arrays (simplified - full Album/Artist objects would need fetching)
-      this.albums = Array.from(albumMap.entries()).map(([key, val]) => ({
-        album_id: key,
-        title: val.title,
-        artist_id: val.artist,
-        artist_name: val.artist,
-        track_ids: [],
-      }));
+      // Fetch actual album records where they exist, falling back to synthetic albums
+      const albumEntries = Array.from(albumMap.entries());
+      this.albums = await Promise.all(
+        albumEntries.map(async ([key, val]) => {
+          try {
+            return await this.musicSpace!.getAlbum(key);
+          } catch {
+            // Album record doesn't exist, return synthetic album
+            return {
+              album_id: key,
+              title: val.title,
+              artist_id: val.artist,
+              artist_name: val.artist,
+              track_ids: [],
+            };
+          }
+        })
+      );
 
       this.artists = Array.from(artistMap.keys()).map(name => ({
         artist_id: name,
@@ -597,28 +607,58 @@ export class LibraryView extends LitElement {
   private renderAlbumGrid() {
     return html`
       <div class="album-grid">
-        ${this.albums.map(album => html`
-          <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
-            <div class="album-artwork">
-              ${this.getAlbumArtworkUrl(album.album_id)
-                ? html`<img src=${this.getAlbumArtworkUrl(album.album_id)!} alt="" />`
-                : ''}
+        ${this.albums.map(album => {
+          const artworkUrl = this.getAlbumArtworkUrl(album);
+          return html`
+            <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
+              <div class="album-artwork">
+                ${artworkUrl ? html`<img src=${artworkUrl} alt="" />` : ''}
+              </div>
+              <div class="album-title">${album.title}</div>
+              <div class="album-artist">${album.artist_name}</div>
             </div>
-            <div class="album-title">${album.title}</div>
-            <div class="album-artist">${album.artist_name}</div>
-          </div>
-        `)}
+          `;
+        })}
       </div>
     `;
   }
 
-  private getAlbumArtworkUrl(albumId: string): string | undefined {
-    // Find a track with this album to get its artwork
-    const track = this.tracks.find(t => `${t.artist}|${t.album}` === albumId);
+  private getAlbumArtworkUrl(album: Album): string | undefined {
+    // First check if the album has its own artwork
+    if (album.artwork_blob_id) {
+      const url = this.artworkUrls.get(album.artwork_blob_id);
+      if (url) return url;
+      // Trigger loading if not yet loaded
+      this.loadAlbumArtwork(album);
+      return undefined;
+    }
+
+    // Fall back to track artwork
+    const track = this.tracks.find(t => `${t.artist}|${t.album}` === album.album_id);
     if (track?.artwork_blob_id) {
       return this.artworkUrls.get(track.artwork_blob_id);
     }
     return undefined;
+  }
+
+  /** Load artwork for an album (if it has its own artwork). */
+  private loadAlbumArtwork(album: Album) {
+    const blobId = album.artwork_blob_id;
+    const blobKey = album.artwork_encryption?.key;
+    const mimeType = album.artwork_mime_type;
+
+    if (!blobId || !blobKey || !this.musicSpace) {
+      return;
+    }
+
+    // Check if already loading or loaded
+    if (this.artworkUrls.has(blobId)) {
+      return;
+    }
+
+    // Mark as loading
+    this.artworkUrls.set(blobId, '');
+    this.loadArtworkAsync(blobId, blobKey, mimeType);
   }
 
   private navigateToAlbum(albumId: string) {
