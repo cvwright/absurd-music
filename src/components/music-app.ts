@@ -134,7 +134,11 @@ export class MusicApp extends LitElement {
       </main>
 
       <footer class="player-bar">
-        <player-bar .playbackService=${this.playbackService}></player-bar>
+        <player-bar
+          .playbackService=${this.playbackService}
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+        ></player-bar>
       </footer>
     `;
   }

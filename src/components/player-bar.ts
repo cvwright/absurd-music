@@ -8,6 +8,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackService, PlaybackEvent } from '@/services/playback.js';
+import type { MusicSpaceService, CacheService } from '@/services/index.js';
 import type { Track } from '@/types/index.js';
 
 @customElement('player-bar')
@@ -226,6 +227,12 @@ export class PlayerBar extends LitElement {
   @property({ attribute: false })
   playbackService: PlaybackService | null = null;
 
+  @property({ attribute: false })
+  musicSpace: MusicSpaceService | null = null;
+
+  @property({ attribute: false })
+  cacheService: CacheService | null = null;
+
   @state()
   private isPlaying = false;
 
@@ -250,6 +257,9 @@ export class PlayerBar extends LitElement {
   @state()
   private currentTrack: Track | null = null;
 
+  @state()
+  private artworkUrl: string | null = null;
+
   private unsubscribe: (() => void) | null = null;
 
   override connectedCallback() {
@@ -261,6 +271,10 @@ export class PlayerBar extends LitElement {
     super.disconnectedCallback();
     this.unsubscribe?.();
     this.unsubscribe = null;
+    if (this.artworkUrl) {
+      URL.revokeObjectURL(this.artworkUrl);
+      this.artworkUrl = null;
+    }
   }
 
   override updated(changedProperties: Map<string, unknown>) {
@@ -281,6 +295,7 @@ export class PlayerBar extends LitElement {
     this.currentTrack = this.playbackService.getCurrentTrack();
     if (this.currentTrack) {
       this.duration = this.currentTrack.duration_ms;
+      this.loadArtwork(this.currentTrack);
     }
 
     this.unsubscribe = this.playbackService.on((event: PlaybackEvent) => {
@@ -305,6 +320,7 @@ export class PlayerBar extends LitElement {
         this.currentTrack = this.playbackService?.getCurrentTrack() ?? null;
         if (this.currentTrack) {
           this.duration = this.currentTrack.duration_ms;
+          this.loadArtwork(this.currentTrack);
         }
         break;
       case 'timeupdate':
@@ -330,7 +346,9 @@ export class PlayerBar extends LitElement {
       <div class="now-playing">
         ${this.currentTrack
           ? html`
-              <div class="artwork"></div>
+              <div class="artwork">
+                ${this.artworkUrl ? html`<img src=${this.artworkUrl} alt="" />` : ''}
+              </div>
               <div class="track-info">
                 <div class="track-title">${this.currentTrack.title}</div>
                 <div class="track-artist">${this.currentTrack.artist_name}</div>
@@ -489,6 +507,56 @@ export class PlayerBar extends LitElement {
     } else {
       this.playbackService.setVolume(0.8);
       this.volume = 80;
+    }
+  }
+
+  private async loadArtwork(track: Track) {
+    const blobId = track.artwork_blob_id;
+    const blobKey = track.artwork_encryption?.key;
+    if (!blobId || !blobKey || !this.musicSpace) {
+      // Clear artwork if track has none
+      if (this.artworkUrl) {
+        URL.revokeObjectURL(this.artworkUrl);
+        this.artworkUrl = null;
+      }
+      return;
+    }
+
+    try {
+      // Check IndexedDB cache first
+      if (this.cacheService) {
+        const cached = await this.cacheService.getArtwork(blobId);
+        if (cached) {
+          if (this.artworkUrl) {
+            URL.revokeObjectURL(this.artworkUrl);
+          }
+          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          this.artworkUrl = URL.createObjectURL(blob);
+          return;
+        }
+      }
+
+      // Download from server
+      const data = await this.musicSpace.downloadArtworkBlob(blobId, blobKey);
+      const mimeType = track.artwork_mime_type ?? 'image/jpeg';
+
+      // Cache in IndexedDB for future sessions
+      if (this.cacheService) {
+        await this.cacheService.cacheArtwork(blobId, data, mimeType);
+      }
+
+      // Create object URL for display
+      if (this.artworkUrl) {
+        URL.revokeObjectURL(this.artworkUrl);
+      }
+      const blob = new Blob([data], { type: mimeType });
+      this.artworkUrl = URL.createObjectURL(blob);
+    } catch (err) {
+      console.warn(`Failed to load artwork for track ${track.track_id}:`, err);
+      if (this.artworkUrl) {
+        URL.revokeObjectURL(this.artworkUrl);
+        this.artworkUrl = null;
+      }
     }
   }
 }
