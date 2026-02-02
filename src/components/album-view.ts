@@ -91,6 +91,10 @@ export class AlbumView extends LitElement {
       color: var(--color-text-secondary);
     }
 
+    .album-meta .menu-container {
+      margin-left: var(--spacing-sm);
+    }
+
     .artist-link {
       color: var(--color-text-primary);
       font-weight: 600;
@@ -479,6 +483,30 @@ export class AlbumView extends LitElement {
             ` : ''}
             <span class="meta-dot">•</span>
             <span>${this.tracks.length} songs, ${this.formatTotalDuration(totalDuration)}</span>
+
+            <div class="menu-container">
+              <button class="menu-btn" @click=${this.toggleMenu}>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2"/>
+                  <circle cx="12" cy="12" r="2"/>
+                  <circle cx="12" cy="19" r="2"/>
+                </svg>
+              </button>
+              ${this.menuOpen ? html`
+                <div class="menu-dropdown">
+                  <button
+                    class="menu-item"
+                    @click=${this.downloadArtwork}
+                    ?disabled=${this.fetchingArtwork || !!this.artworkUrl}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    ${this.fetchingArtwork ? 'Downloading...' : this.artworkUrl ? 'Artwork present' : 'Download artwork'}
+                  </button>
+                </div>
+              ` : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -489,30 +517,6 @@ export class AlbumView extends LitElement {
             <path d="M8 5v14l11-7z"/>
           </svg>
         </button>
-
-        <div class="menu-container">
-          <button class="menu-btn" @click=${this.toggleMenu}>
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="5" r="2"/>
-              <circle cx="12" cy="12" r="2"/>
-              <circle cx="12" cy="19" r="2"/>
-            </svg>
-          </button>
-          ${this.menuOpen ? html`
-            <div class="menu-dropdown">
-              <button
-                class="menu-item"
-                @click=${this.downloadArtwork}
-                ?disabled=${this.fetchingArtwork || !!this.artworkUrl}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                ${this.fetchingArtwork ? 'Downloading...' : this.artworkUrl ? 'Artwork present' : 'Download artwork'}
-              </button>
-            </div>
-          ` : ''}
-        </div>
       </div>
 
       <div class="track-list">
