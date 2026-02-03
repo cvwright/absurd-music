@@ -11,6 +11,8 @@ import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNoti
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
+type SortField = 'title' | 'artist' | 'album' | 'duration';
+type SortDirection = 'asc' | 'desc';
 
 interface TrackEntry {
   id: string;
@@ -376,6 +378,104 @@ export class LibraryView extends LitElement {
       background-color: var(--color-bg-highlight);
       margin: var(--spacing-xs) 0;
     }
+
+    /* Sort and filter controls */
+    .controls-row {
+      display: flex;
+      gap: var(--spacing-md);
+      align-items: center;
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .filter-input {
+      flex: 1;
+      max-width: 300px;
+      padding: var(--spacing-sm) var(--spacing-md);
+      background-color: var(--color-bg-secondary);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .filter-input:focus {
+      outline: none;
+      border-color: var(--color-text-subdued);
+      background-color: var(--color-bg-highlight);
+    }
+
+    .filter-input::placeholder {
+      color: var(--color-text-subdued);
+    }
+
+    .sort-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      margin-left: auto;
+    }
+
+    .sort-label {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-subdued);
+    }
+
+    .sort-select {
+      padding: var(--spacing-xs) var(--spacing-sm);
+      background-color: var(--color-bg-secondary);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .sort-select:hover {
+      background-color: var(--color-bg-highlight);
+    }
+
+    .sort-select:focus {
+      outline: none;
+      border-color: var(--color-text-subdued);
+    }
+
+    .sort-direction-btn {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      background-color: var(--color-bg-secondary);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .sort-direction-btn:hover {
+      background-color: var(--color-bg-highlight);
+      color: var(--color-text-primary);
+    }
+
+    .sort-direction-btn svg {
+      width: 16px;
+      height: 16px;
+      transition: transform var(--transition-fast);
+    }
+
+    .sort-direction-btn.desc svg {
+      transform: rotate(180deg);
+    }
+
+    .no-results {
+      text-align: center;
+      padding: var(--spacing-xl);
+      color: var(--color-text-subdued);
+    }
   `;
 
   @property({ attribute: false })
@@ -410,6 +510,15 @@ export class LibraryView extends LitElement {
 
   @state()
   private artists: Artist[] = [];
+
+  @state()
+  private sortField: SortField = 'title';
+
+  @state()
+  private sortDirection: SortDirection = 'asc';
+
+  @state()
+  private filterText = '';
 
   /** Cache of artwork object URLs by blob ID (shared across tracks on same album) */
   private artworkUrls = new Map<string, string>();
@@ -572,7 +681,10 @@ export class LibraryView extends LitElement {
       </div>
 
       <div class="content">
-        ${this.isEmpty ? this.renderEmptyState() : this.renderContent()}
+        ${this.isEmpty ? this.renderEmptyState() : html`
+          ${this.renderControls()}
+          ${this.renderContent()}
+        `}
       </div>
     `;
   }
@@ -595,6 +707,161 @@ export class LibraryView extends LitElement {
     `;
   }
 
+  private renderControls() {
+    const sortOptions = this.getSortOptionsForTab();
+    return html`
+      <div class="controls-row">
+        <input
+          type="text"
+          class="filter-input"
+          placeholder="Filter ${this.activeTab}..."
+          .value=${this.filterText}
+          @input=${this.handleFilterInput}
+        />
+        <div class="sort-controls">
+          <span class="sort-label">Sort by</span>
+          <select class="sort-select" @change=${this.handleSortChange}>
+            ${sortOptions.map(opt => html`
+              <option value=${opt.value} ?selected=${this.sortField === opt.value}>
+                ${opt.label}
+              </option>
+            `)}
+          </select>
+          <button
+            class="sort-direction-btn ${this.sortDirection}"
+            @click=${this.toggleSortDirection}
+            title="${this.sortDirection === 'asc' ? 'Ascending' : 'Descending'}"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14l5-5 5 5H7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private getSortOptionsForTab(): Array<{ value: SortField; label: string }> {
+    switch (this.activeTab) {
+      case 'songs':
+        return [
+          { value: 'title', label: 'Title' },
+          { value: 'artist', label: 'Artist' },
+          { value: 'album', label: 'Album' },
+          { value: 'duration', label: 'Duration' },
+        ];
+      case 'albums':
+        return [
+          { value: 'title', label: 'Title' },
+          { value: 'artist', label: 'Artist' },
+        ];
+      case 'artists':
+        return [
+          { value: 'title', label: 'Name' },
+        ];
+    }
+  }
+
+  private handleFilterInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    this.filterText = input.value;
+  }
+
+  private handleSortChange(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    this.sortField = select.value as SortField;
+  }
+
+  private toggleSortDirection() {
+    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+  }
+
+  private getFilteredAndSortedTracks(): TrackEntry[] {
+    let filtered = this.tracks;
+
+    // Filter by text
+    if (this.filterText) {
+      const search = this.filterText.toLowerCase();
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(search) ||
+        t.artist.toLowerCase().includes(search) ||
+        t.album.toLowerCase().includes(search)
+      );
+    }
+
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (this.sortField) {
+        case 'title':
+          cmp = a.title.localeCompare(b.title);
+          break;
+        case 'artist':
+          cmp = a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
+          break;
+        case 'album':
+          cmp = a.album.localeCompare(b.album) || a.title.localeCompare(b.title);
+          break;
+        case 'duration':
+          cmp = a.duration_ms - b.duration_ms;
+          break;
+      }
+      return this.sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return sorted;
+  }
+
+  private getFilteredAndSortedAlbums(): Album[] {
+    let filtered = this.albums;
+
+    // Filter by text
+    if (this.filterText) {
+      const search = this.filterText.toLowerCase();
+      filtered = filtered.filter(a =>
+        a.title.toLowerCase().includes(search) ||
+        a.artist_name.toLowerCase().includes(search)
+      );
+    }
+
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (this.sortField) {
+        case 'title':
+        case 'album':
+          cmp = a.title.localeCompare(b.title);
+          break;
+        case 'artist':
+          cmp = a.artist_name.localeCompare(b.artist_name) || a.title.localeCompare(b.title);
+          break;
+        default:
+          cmp = a.title.localeCompare(b.title);
+      }
+      return this.sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return sorted;
+  }
+
+  private getFilteredAndSortedArtists(): Artist[] {
+    let filtered = this.artists;
+
+    // Filter by text
+    if (this.filterText) {
+      const search = this.filterText.toLowerCase();
+      filtered = filtered.filter(a => a.name.toLowerCase().includes(search));
+    }
+
+    // Sort by name
+    const sorted = [...filtered].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name);
+      return this.sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return sorted;
+  }
+
   private renderContent() {
     switch (this.activeTab) {
       case 'songs':
@@ -607,6 +874,10 @@ export class LibraryView extends LitElement {
   }
 
   private renderSongsList() {
+    const tracks = this.getFilteredAndSortedTracks();
+    if (tracks.length === 0 && this.filterText) {
+      return html`<div class="no-results">No songs match "${this.filterText}"</div>`;
+    }
     return html`
       <div class="track-list">
         <div class="track-header">
@@ -617,7 +888,7 @@ export class LibraryView extends LitElement {
           <span>Duration</span>
           <span></span>
         </div>
-        ${this.tracks.map((track, index) => html`
+        ${tracks.map((track, index) => html`
           <div class="track-item">
             <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
             <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
@@ -785,9 +1056,13 @@ export class LibraryView extends LitElement {
   }
 
   private renderAlbumGrid() {
+    const albums = this.getFilteredAndSortedAlbums();
+    if (albums.length === 0 && this.filterText) {
+      return html`<div class="no-results">No albums match "${this.filterText}"</div>`;
+    }
     return html`
       <div class="album-grid">
-        ${this.albums.map(album => {
+        ${albums.map(album => {
           const artworkUrl = this.getAlbumArtworkUrl(album);
           return html`
             <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
@@ -850,9 +1125,13 @@ export class LibraryView extends LitElement {
   }
 
   private renderArtistList() {
+    const artists = this.getFilteredAndSortedArtists();
+    if (artists.length === 0 && this.filterText) {
+      return html`<div class="no-results">No artists match "${this.filterText}"</div>`;
+    }
     return html`
       <div class="album-grid">
-        ${this.artists.map(artist => html`
+        ${artists.map(artist => html`
           <div class="album-card" @click=${() => this.navigateToArtist(artist.artist_id)}>
             <div class="album-artwork artist-avatar">
               <svg viewBox="0 0 24 24" fill="currentColor">
