@@ -994,8 +994,12 @@ export class LibraryView extends LitElement {
   }
 
   private playTrack(trackId: string) {
+    // Get the current filtered/sorted track list as the queue context
+    const filteredTracks = this.getFilteredAndSortedTracks();
+    const queue = filteredTracks.map(t => t.id);
+
     this.dispatchEvent(new CustomEvent('play-track', {
-      detail: { trackId },
+      detail: { trackId, queue },
       bubbles: true,
       composed: true,
     }));

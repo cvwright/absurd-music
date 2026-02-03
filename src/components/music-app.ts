@@ -246,17 +246,22 @@ export class MusicApp extends LitElement {
     this.viewParams = e.detail.params ?? {};
   }
 
-  private async handlePlayTrack(e: CustomEvent<{ trackId: string }>) {
+  private async handlePlayTrack(e: CustomEvent<{ trackId: string; queue?: string[] }>) {
     if (!this.musicSpace) return;
 
     try {
       const track = await this.musicSpace.getTrack(e.detail.trackId);
 
-      // Set queue from library and play the selected track
-      const index = await this.musicSpace.getSearchIndex();
-      const trackIds = index.tracks.map(t => t.id);
-      const startIndex = trackIds.indexOf(e.detail.trackId);
+      // Use provided queue (e.g., filtered list) or fall back to full library
+      let trackIds: string[];
+      if (e.detail.queue && e.detail.queue.length > 0) {
+        trackIds = e.detail.queue;
+      } else {
+        const index = await this.musicSpace.getSearchIndex();
+        trackIds = index.tracks.map(t => t.id);
+      }
 
+      const startIndex = trackIds.indexOf(e.detail.trackId);
       this.playbackService.setQueue(trackIds, startIndex >= 0 ? startIndex : 0);
       await this.playbackService.playTrack(track);
     } catch (err) {
