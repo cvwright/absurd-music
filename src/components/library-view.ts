@@ -20,6 +20,7 @@ interface TrackEntry {
   artist: string;
   album: string;
   duration_ms: number;
+  genre?: string;
   artwork_blob_id?: string;
   artwork_blob_key?: string;
   artwork_mime_type?: string;
@@ -520,6 +521,9 @@ export class LibraryView extends LitElement {
   @state()
   private filterText = '';
 
+  @state()
+  private genreFilter = '';
+
   /** Cache of artwork object URLs by blob ID (shared across tracks on same album) */
   private artworkUrls = new Map<string, string>();
 
@@ -580,6 +584,7 @@ export class LibraryView extends LitElement {
               artist: t.artist,
               album: t.album,
               duration_ms: t.duration_ms,
+              genre: fullTrack.genre,
               artwork_blob_id: fullTrack.artwork_blob_id,
               artwork_blob_key: fullTrack.artwork_encryption?.key,
               artwork_mime_type: fullTrack.artwork_mime_type,
@@ -719,6 +724,14 @@ export class LibraryView extends LitElement {
           @input=${this.handleFilterInput}
         />
         <div class="sort-controls">
+          ${this.availableGenres.length > 0 ? html`
+            <select class="sort-select" @change=${this.handleGenreChange}>
+              <option value="">All Genres</option>
+              ${this.availableGenres.map(g => html`
+                <option value=${g} ?selected=${this.genreFilter === g}>${g}</option>
+              `)}
+            </select>
+          ` : ''}
           <span class="sort-label">Sort by</span>
           <select class="sort-select" @change=${this.handleSortChange}>
             ${sortOptions.map(opt => html`
@@ -762,9 +775,23 @@ export class LibraryView extends LitElement {
     }
   }
 
+  /** Get sorted list of unique genres from loaded tracks. */
+  private get availableGenres(): string[] {
+    const genres = new Set<string>();
+    for (const track of this.tracks) {
+      if (track.genre) genres.add(track.genre);
+    }
+    return [...genres].sort((a, b) => a.localeCompare(b));
+  }
+
   private handleFilterInput(e: Event) {
     const input = e.target as HTMLInputElement;
     this.filterText = input.value;
+  }
+
+  private handleGenreChange(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    this.genreFilter = select.value;
   }
 
   private handleSortChange(e: Event) {
@@ -778,6 +805,11 @@ export class LibraryView extends LitElement {
 
   private getFilteredAndSortedTracks(): TrackEntry[] {
     let filtered = this.tracks;
+
+    // Filter by genre
+    if (this.genreFilter) {
+      filtered = filtered.filter(t => t.genre === this.genreFilter);
+    }
 
     // Filter by text
     if (this.filterText) {
@@ -815,6 +847,16 @@ export class LibraryView extends LitElement {
   private getFilteredAndSortedAlbums(): Album[] {
     let filtered = this.albums;
 
+    // Filter by genre: include album if any of its tracks match
+    if (this.genreFilter) {
+      const albumKeysWithGenre = new Set(
+        this.tracks
+          .filter(t => t.genre === this.genreFilter)
+          .map(t => `${t.artist}|${t.album}`)
+      );
+      filtered = filtered.filter(a => albumKeysWithGenre.has(a.album_id));
+    }
+
     // Filter by text
     if (this.filterText) {
       const search = this.filterText.toLowerCase();
@@ -846,6 +888,16 @@ export class LibraryView extends LitElement {
 
   private getFilteredAndSortedArtists(): Artist[] {
     let filtered = this.artists;
+
+    // Filter by genre: include artist if any of their tracks match
+    if (this.genreFilter) {
+      const artistsWithGenre = new Set(
+        this.tracks
+          .filter(t => t.genre === this.genreFilter)
+          .map(t => t.artist)
+      );
+      filtered = filtered.filter(a => artistsWithGenre.has(a.name));
+    }
 
     // Filter by text
     if (this.filterText) {

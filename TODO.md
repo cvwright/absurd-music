@@ -10,7 +10,7 @@
 10. Content similarity search / Recommendations - with OpenL3 or MuLan embeddings
 11. Favorites
 12. ~~Sort and filtering in the library view~~
-13. Genre view?
+13. ~~Genre filter~~
 14. Smart playlists - Include everything from a given artist or genre or time period etc
 15. Check for admin on startup, and if so make sure we have roles and capabilities set up for multi-user
 16. Multi-user support
