@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
-import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification } from '@/types/index.js';
+import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
@@ -154,7 +154,7 @@ export class LibraryView extends LitElement {
 
     .track-header {
       display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 100px;
+      grid-template-columns: 40px 40px 1fr 1fr 100px 40px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       border-bottom: 1px solid var(--color-bg-highlight);
@@ -228,7 +228,7 @@ export class LibraryView extends LitElement {
     /* Track item */
     .track-item {
       display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 100px;
+      grid-template-columns: 40px 40px 1fr 1fr 100px 40px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       align-items: center;
@@ -294,6 +294,88 @@ export class LibraryView extends LitElement {
       color: var(--color-text-subdued);
       text-align: right;
     }
+
+    /* Track menu */
+    .track-menu-container {
+      position: relative;
+    }
+
+    .track-menu-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--color-text-subdued);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: all var(--transition-fast);
+    }
+
+    .track-item:hover .track-menu-btn {
+      opacity: 1;
+    }
+
+    .track-menu-btn:hover {
+      color: var(--color-text-primary);
+      background-color: var(--color-bg-highlight);
+    }
+
+    .track-menu-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .track-menu-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: var(--spacing-xs);
+      min-width: 200px;
+      background-color: var(--color-bg-elevated, #282828);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 16px 24px rgba(0, 0, 0, 0.3);
+      padding: var(--spacing-xs) 0;
+      z-index: 100;
+    }
+
+    .track-menu-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      width: 100%;
+      padding: var(--spacing-sm) var(--spacing-md);
+      background: transparent;
+      color: var(--color-text-primary);
+      font-size: var(--font-size-sm);
+      text-align: left;
+      transition: background-color var(--transition-fast);
+    }
+
+    .track-menu-item:hover {
+      background-color: var(--color-bg-highlight);
+    }
+
+    .track-menu-item svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .track-menu-section-title {
+      padding: var(--spacing-xs) var(--spacing-md);
+      font-size: var(--font-size-xs);
+      color: var(--color-text-subdued);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .track-menu-divider {
+      height: 1px;
+      background-color: var(--color-bg-highlight);
+      margin: var(--spacing-xs) 0;
+    }
   `;
 
   @property({ attribute: false })
@@ -305,8 +387,14 @@ export class LibraryView extends LitElement {
   @property({ type: String })
   initialTab: Tab = 'songs';
 
+  @property({ attribute: false })
+  playlists: PlaylistIndexEntry[] = [];
+
   @state()
   private activeTab: Tab = 'songs';
+
+  @state()
+  private trackMenuOpen: string | null = null;
 
   @state()
   private isEmpty = true;
@@ -329,15 +417,28 @@ export class LibraryView extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.loadLibrary();
+    this.handleClickOutside = this.handleClickOutside.bind(this);
+    document.addEventListener('click', this.handleClickOutside);
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener('click', this.handleClickOutside);
     // Revoke object URLs to free memory
     for (const url of this.artworkUrls.values()) {
       URL.revokeObjectURL(url);
     }
     this.artworkUrls.clear();
+  }
+
+  private handleClickOutside(e: MouseEvent) {
+    if (this.trackMenuOpen) {
+      const path = e.composedPath();
+      const menuContainer = this.shadowRoot?.querySelector('.track-menu-container');
+      if (menuContainer && !path.includes(menuContainer)) {
+        this.trackMenuOpen = null;
+      }
+    }
   }
 
   override updated(changedProperties: Map<string, unknown>) {
@@ -514,25 +615,104 @@ export class LibraryView extends LitElement {
           <span>Title</span>
           <span>Album</span>
           <span>Duration</span>
+          <span></span>
         </div>
         ${this.tracks.map((track, index) => html`
-          <div class="track-item" @click=${() => this.playTrack(track.id)}>
-            <span class="track-number">${index + 1}</span>
-            <div class="track-artwork">
+          <div class="track-item">
+            <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
+            <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
               ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
                 ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
                 : html`${this.loadArtwork(track)}`}
             </div>
-            <div class="track-info">
+            <div class="track-info" @click=${() => this.playTrack(track.id)}>
               <span class="track-title">${track.title}</span>
               <span class="track-artist">${track.artist}</span>
             </div>
-            <span class="track-album">${track.album}</span>
-            <span class="track-duration">${this.formatDuration(track.duration_ms)}</span>
+            <span class="track-album" @click=${() => this.playTrack(track.id)}>${track.album}</span>
+            <span class="track-duration" @click=${() => this.playTrack(track.id)}>${this.formatDuration(track.duration_ms)}</span>
+            <div class="track-menu-container">
+              <button
+                class="track-menu-btn"
+                @click=${(e: Event) => this.toggleTrackMenu(e, track.id)}
+                title="More options"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2"/>
+                  <circle cx="12" cy="12" r="2"/>
+                  <circle cx="12" cy="19" r="2"/>
+                </svg>
+              </button>
+              ${this.trackMenuOpen === track.id ? this.renderTrackMenu(track.id) : ''}
+            </div>
           </div>
         `)}
       </div>
     `;
+  }
+
+  private toggleTrackMenu(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = this.trackMenuOpen === trackId ? null : trackId;
+  }
+
+  private renderTrackMenu(trackId: string) {
+    return html`
+      <div class="track-menu-dropdown">
+        <button class="track-menu-item" @click=${(e: Event) => this.handleAddToQueue(e, trackId)}>
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+          </svg>
+          Add to Queue
+        </button>
+        <div class="track-menu-divider"></div>
+        <div class="track-menu-section-title">Add to Playlist</div>
+        ${this.playlists.length === 0
+          ? html`<div class="track-menu-item" style="color: var(--color-text-subdued); cursor: default;">No playlists</div>`
+          : this.playlists.map(playlist => html`
+              <button class="track-menu-item" @click=${(e: Event) => this.handleAddToPlaylist(e, trackId, playlist.playlist_id)}>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                </svg>
+                ${playlist.name}
+              </button>
+            `)}
+        <div class="track-menu-divider"></div>
+        <button class="track-menu-item" @click=${(e: Event) => this.handleCreatePlaylistWithTrack(e, trackId)}>
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          </svg>
+          New Playlist...
+        </button>
+      </div>
+    `;
+  }
+
+  private handleAddToQueue(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+    // TODO: Implement add to queue
+    console.log('Add to queue:', trackId);
+  }
+
+  private handleAddToPlaylist(e: Event, trackId: string, playlistId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+    this.dispatchEvent(new CustomEvent('add-to-playlist', {
+      detail: { trackId, playlistId },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private handleCreatePlaylistWithTrack(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+    this.dispatchEvent(new CustomEvent('create-playlist-with-track', {
+      detail: { trackId },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private formatDuration(ms: number): string {

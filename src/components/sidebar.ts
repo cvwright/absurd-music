@@ -6,6 +6,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import type { PlaylistIndexEntry } from '@/types/index.js';
 
 @customElement('app-sidebar')
 export class Sidebar extends LitElement {
@@ -105,11 +106,61 @@ export class Sidebar extends LitElement {
 
     .playlist-item:hover {
       color: var(--color-text-primary);
+      background-color: var(--color-bg-highlight);
+    }
+
+    .playlist-item.active {
+      color: var(--color-text-primary);
+      background-color: var(--color-bg-highlight);
+    }
+
+    .nav-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-right: var(--spacing-sm);
+    }
+
+    .create-playlist-btn {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--color-text-subdued);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+    }
+
+    .create-playlist-btn:hover {
+      color: var(--color-text-primary);
+      background-color: var(--color-bg-highlight);
+    }
+
+    .create-playlist-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .empty-playlists {
+      padding: var(--spacing-sm) var(--spacing-md);
+      color: var(--color-text-subdued);
+      font-size: var(--font-size-sm);
+      font-style: italic;
     }
   `;
 
   @property({ type: String })
   currentView = 'library';
+
+  @property({ type: String })
+  currentPlaylistId = '';
+
+  @property({ attribute: false })
+  playlists: PlaylistIndexEntry[] = [];
 
   render() {
     return html`
@@ -176,9 +227,30 @@ export class Sidebar extends LitElement {
         <div class="divider"></div>
 
         <div class="nav-section playlists">
-          <div class="nav-section-title">Playlists</div>
-          <!-- Playlists will be rendered here -->
-          <div class="playlist-item">No playlists yet</div>
+          <div class="nav-section-header">
+            <div class="nav-section-title">Playlists</div>
+            <button
+              class="create-playlist-btn"
+              @click=${this.openCreatePlaylist}
+              title="Create playlist"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+              </svg>
+            </button>
+          </div>
+          ${this.playlists.length === 0
+            ? html`<div class="empty-playlists">No playlists yet</div>`
+            : this.playlists.map(
+                (p) => html`
+                  <div
+                    class="playlist-item ${this.currentView === 'playlist' && this.currentPlaylistId === p.playlist_id ? 'active' : ''}"
+                    @click=${() => this.navigate('playlist', { id: p.playlist_id })}
+                  >
+                    ${p.name}
+                  </div>
+                `
+              )}
         </div>
       </nav>
     `;
@@ -188,6 +260,15 @@ export class Sidebar extends LitElement {
     this.dispatchEvent(
       new CustomEvent('navigate', {
         detail: { view, params },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private openCreatePlaylist() {
+    this.dispatchEvent(
+      new CustomEvent('open-create-playlist', {
         bubbles: true,
         composed: true,
       })

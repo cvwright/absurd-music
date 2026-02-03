@@ -7,7 +7,7 @@
 
 import { Space, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64 } from 'reeeductio';
 import type { MessageQuery, MessagesResponse, MessageCreated } from 'reeeductio';
-import type { Track, Album, Artist, SearchIndex } from '@/types/index.js';
+import type { Track, Album, Artist, SearchIndex, Playlist, PlaylistIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
 
 export interface MusicSpaceConfig {
@@ -204,6 +204,72 @@ export class MusicSpaceService {
   async setUserState<T>(path: string, data: T): Promise<void> {
     const fullPath = `user/${this.userId}/${path}`;
     await this.space.setEncryptedState(fullPath, stringToBytes(JSON.stringify(data)));
+  }
+
+  // ============================================================
+  // Playlist Operations
+  // ============================================================
+
+  /**
+   * Generate a random playlist ID.
+   */
+  generatePlaylistId(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const base64 = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+    return `playlist_${base64}`;
+  }
+
+  /**
+   * Get the playlist index (list of all playlists).
+   */
+  async getPlaylistIndex(): Promise<PlaylistIndex> {
+    try {
+      const data = await this.space.getEncryptedData(`user/${this.userId}/playlist_index`);
+      return JSON.parse(bytesToString(data)) as PlaylistIndex;
+    } catch {
+      return { playlists: [], updated_at: Date.now() };
+    }
+  }
+
+  /**
+   * Update the playlist index.
+   */
+  async setPlaylistIndex(index: PlaylistIndex): Promise<void> {
+    await this.space.setEncryptedData(
+      `user/${this.userId}/playlist_index`,
+      stringToBytes(JSON.stringify(index))
+    );
+  }
+
+  /**
+   * Get a playlist by ID.
+   */
+  async getPlaylist(playlistId: string): Promise<Playlist> {
+    const data = await this.space.getEncryptedData(`user/${this.userId}/playlists/${playlistId}`);
+    return JSON.parse(bytesToString(data)) as Playlist;
+  }
+
+  /**
+   * Save a playlist.
+   */
+  async setPlaylist(playlist: Playlist): Promise<void> {
+    await this.space.setEncryptedData(
+      `user/${this.userId}/playlists/${playlist.playlist_id}`,
+      stringToBytes(JSON.stringify(playlist))
+    );
+  }
+
+  /**
+   * Delete a playlist by setting it to null.
+   */
+  async deletePlaylist(playlistId: string): Promise<void> {
+    await this.space.setEncryptedData(
+      `user/${this.userId}/playlists/${playlistId}`,
+      stringToBytes('null')
+    );
   }
 
   // ============================================================

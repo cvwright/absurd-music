@@ -22,6 +22,32 @@ export interface Playlist {
   updated_at: number;
   /** Optional custom artwork blob ID */
   artwork_blob_id?: string;
+  /** Optional artwork encryption key (base64) */
+  artwork_blob_key?: string;
+}
+
+/**
+ * Lightweight playlist entry for the sidebar index.
+ */
+export interface PlaylistIndexEntry {
+  /** Playlist ID */
+  playlist_id: string;
+  /** Playlist name */
+  name: string;
+  /** Number of tracks in playlist */
+  track_count: number;
+  /** Unix timestamp when last modified */
+  updated_at: number;
+}
+
+/**
+ * Index of all user playlists stored at /user/{user_id}/playlist_index
+ */
+export interface PlaylistIndex {
+  /** List of playlist entries */
+  playlists: PlaylistIndexEntry[];
+  /** Unix timestamp when index was last updated */
+  updated_at: number;
 }
 
 /**

@@ -5,7 +5,7 @@
 5. ~~Album/Artist views - Detail pages with track listings~~
 6. Real authentication flow - Connect to wallet space, get music space credentials
 7. Artist view - Photo, description, etc
-8. Playlist support - Create, Add music, Edit, Display, Play
+8. ~~Playlist support - Create, Add music, Edit, View, Play~~
 9. Search interface
 10. Content similarity search / Recommendations - with OpenL3 or MuLan embeddings
 11. Favorites

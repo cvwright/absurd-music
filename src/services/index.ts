@@ -9,4 +9,5 @@ export { CryptoService } from './crypto.js';
 export { CacheService } from './cache.js';
 export { PlaybackService } from './playback.js';
 export { ImportService } from './import.js';
+export { PlaylistService } from './playlist.js';
 export * from './credentials.js';

@@ -12,7 +12,9 @@ import { customElement, state } from 'lit/decorators.js';
 import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space.js';
 import { PlaybackService } from '@/services/playback.js';
 import { CacheService } from '@/services/cache.js';
+import { PlaylistService } from '@/services/playlist.js';
 import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
+import type { PlaylistIndexEntry } from '@/types/index.js';
 
 import { setLogLevel } from 'reeeductio';
 setLogLevel('debug');
@@ -26,6 +28,8 @@ import './login-view.js';
 import './album-view.js';
 import './artist-view.js';
 import './recently-added-view.js';
+import './playlist-view.js';
+import './create-playlist-modal.js';
 
 type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent';
 
@@ -84,12 +88,19 @@ export class MusicApp extends LitElement {
   private musicSpace: MusicSpaceService | null = null;
   private playbackService = new PlaybackService();
   private cacheService = new CacheService();
+  private playlistService: PlaylistService | null = null;
 
   @state()
   private currentView: View = 'library';
 
   @state()
   private viewParams: Record<string, string> = {};
+
+  @state()
+  private playlists: PlaylistIndexEntry[] = [];
+
+  @state()
+  private showCreatePlaylistModal = false;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -115,6 +126,13 @@ export class MusicApp extends LitElement {
     if (!this.musicSpace) return;
     await this.cacheService.init();
     this.playbackService.init(this.musicSpace, this.cacheService);
+    this.playlistService = new PlaylistService(this.musicSpace);
+    await this.loadPlaylists();
+  }
+
+  private async loadPlaylists() {
+    if (!this.playlistService) return;
+    this.playlists = await this.playlistService.listPlaylists();
   }
 
   render() {
@@ -126,11 +144,23 @@ export class MusicApp extends LitElement {
       <aside class="sidebar">
         <app-sidebar
           .currentView=${this.currentView}
+          .currentPlaylistId=${this.viewParams.id || ''}
+          .playlists=${this.playlists}
           @navigate=${this.handleNavigate}
+          @open-create-playlist=${this.handleOpenCreatePlaylist}
         ></app-sidebar>
       </aside>
 
-      <main class="main-content" @play-track=${this.handlePlayTrack} @play-album=${this.handlePlayAlbum} @navigate=${this.handleNavigate}>
+      <main
+        class="main-content"
+        @play-track=${this.handlePlayTrack}
+        @play-album=${this.handlePlayAlbum}
+        @navigate=${this.handleNavigate}
+        @playlist-updated=${this.loadPlaylists}
+        @playlist-deleted=${this.loadPlaylists}
+        @add-to-playlist=${this.handleAddToPlaylist}
+        @create-playlist-with-track=${this.handleCreatePlaylistWithTrack}
+      >
         ${this.renderView()}
       </main>
 
@@ -141,6 +171,12 @@ export class MusicApp extends LitElement {
           .cacheService=${this.cacheService}
         ></player-bar>
       </footer>
+
+      <create-playlist-modal
+        ?open=${this.showCreatePlaylistModal}
+        @close=${this.handleCloseCreatePlaylist}
+        @create=${this.handleCreatePlaylist}
+      ></create-playlist-modal>
     `;
   }
 
@@ -151,6 +187,7 @@ export class MusicApp extends LitElement {
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
           .initialTab=${this.viewParams.tab || 'songs'}
+          .playlists=${this.playlists}
         ></library-view>`;
       case 'album':
         return html`<album-view
@@ -165,7 +202,12 @@ export class MusicApp extends LitElement {
           .cacheService=${this.cacheService}
         ></artist-view>`;
       case 'playlist':
-        return html`<div>Playlist view: ${this.viewParams.id}</div>`;
+        return html`<playlist-view
+          .playlistId=${this.viewParams.id}
+          .musicSpace=${this.musicSpace}
+          .cacheService=${this.cacheService}
+          .playlistService=${this.playlistService}
+        ></playlist-view>`;
       case 'search':
         return html`<div>Search view</div>`;
       case 'recent':
@@ -178,6 +220,7 @@ export class MusicApp extends LitElement {
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
           .initialTab=${this.viewParams.tab || 'songs'}
+          .playlists=${this.playlists}
         ></library-view>`;
     }
   }
@@ -233,6 +276,51 @@ export class MusicApp extends LitElement {
     } catch (err) {
       console.error('Failed to play album:', err);
     }
+  }
+
+  private handleOpenCreatePlaylist() {
+    this.showCreatePlaylistModal = true;
+  }
+
+  private handleCloseCreatePlaylist() {
+    this.showCreatePlaylistModal = false;
+  }
+
+  private async handleCreatePlaylist(e: CustomEvent<{ name: string; description?: string }>) {
+    if (!this.playlistService) return;
+
+    try {
+      const playlist = await this.playlistService.createPlaylist(e.detail.name, e.detail.description);
+      await this.loadPlaylists();
+      this.showCreatePlaylistModal = false;
+
+      // If there's a pending track to add, add it now
+      if (this.pendingTrackForPlaylist) {
+        await this.playlistService.addTracks(playlist.playlist_id, [this.pendingTrackForPlaylist]);
+        await this.loadPlaylists();
+        this.pendingTrackForPlaylist = null;
+      }
+    } catch (err) {
+      console.error('Failed to create playlist:', err);
+    }
+  }
+
+  private async handleAddToPlaylist(e: CustomEvent<{ trackId: string; playlistId: string }>) {
+    if (!this.playlistService) return;
+
+    try {
+      await this.playlistService.addTracks(e.detail.playlistId, [e.detail.trackId]);
+      await this.loadPlaylists();
+    } catch (err) {
+      console.error('Failed to add track to playlist:', err);
+    }
+  }
+
+  private pendingTrackForPlaylist: string | null = null;
+
+  private handleCreatePlaylistWithTrack(e: CustomEvent<{ trackId: string }>) {
+    this.pendingTrackForPlaylist = e.detail.trackId;
+    this.showCreatePlaylistModal = true;
   }
 }
 
