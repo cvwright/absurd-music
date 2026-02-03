@@ -44,6 +44,9 @@ export class PlaybackService {
   // Prefetch state
   private prefetchingTrackIds: Set<string> = new Set();
 
+  // Media Session artwork URL (for cleanup)
+  private mediaSessionArtworkUrl: string | null = null;
+
   constructor() {
     this.audio = new Audio();
     this.setupAudioListeners();
@@ -63,15 +66,22 @@ export class PlaybackService {
   init(space: MusicSpaceService, cache: CacheService): void {
     this.space = space;
     this.cache = cache;
+    this.setupMediaSession();
   }
 
   private setupAudioListeners(): void {
     this.audio.addEventListener('play', () => {
       this.emit({ type: 'play' });
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
     });
 
     this.audio.addEventListener('pause', () => {
       this.emit({ type: 'pause' });
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
     });
 
     this.audio.addEventListener('ended', () => {
@@ -98,6 +108,106 @@ export class PlaybackService {
         error: new Error(error?.message ?? 'Unknown playback error'),
       });
     });
+
+    // Update Media Session position state when duration becomes available
+    this.audio.addEventListener('loadedmetadata', () => {
+      this.updateMediaSessionPositionState();
+    });
+  }
+
+  /**
+   * Set up Media Session API action handlers for OS-level media controls.
+   */
+  private setupMediaSession(): void {
+    if (!('mediaSession' in navigator)) return;
+
+    navigator.mediaSession.setActionHandler('play', () => {
+      this.resume();
+    });
+
+    navigator.mediaSession.setActionHandler('pause', () => {
+      this.pause();
+    });
+
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      this.previous();
+    });
+
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      this.next();
+    });
+
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (details.seekTime !== undefined) {
+        this.seek(details.seekTime * 1000);
+      }
+    });
+
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const skipTime = details.seekOffset ?? 10;
+      this.seek(Math.max(0, this.audio.currentTime * 1000 - skipTime * 1000));
+    });
+
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const skipTime = details.seekOffset ?? 10;
+      this.seek(this.audio.currentTime * 1000 + skipTime * 1000);
+    });
+  }
+
+  /**
+   * Update Media Session metadata with current track info and artwork.
+   */
+  private async updateMediaSessionMetadata(track: Track): Promise<void> {
+    if (!('mediaSession' in navigator)) return;
+
+    // Clean up previous artwork blob URL
+    if (this.mediaSessionArtworkUrl) {
+      URL.revokeObjectURL(this.mediaSessionArtworkUrl);
+      this.mediaSessionArtworkUrl = null;
+    }
+
+    // Build artwork array if we have artwork and its encryption key
+    let artwork: MediaImage[] = [];
+    if (track.artwork_blob_id && track.artwork_encryption && this.space) {
+      try {
+        const artworkData = await this.space.downloadArtworkBlob(
+          track.artwork_blob_id,
+          track.artwork_encryption.key
+        );
+        const mimeType = track.artwork_mime_type ?? 'image/jpeg';
+        const blob = new Blob([artworkData], { type: mimeType });
+        this.mediaSessionArtworkUrl = URL.createObjectURL(blob);
+        artwork = [
+          { src: this.mediaSessionArtworkUrl, sizes: '512x512', type: mimeType },
+        ];
+      } catch (e) {
+        console.error('Failed to load artwork for Media Session:', e);
+      }
+    }
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title,
+      artist: track.artist_name,
+      album: track.album_name,
+      artwork,
+    });
+  }
+
+  /**
+   * Update Media Session position state for seek bar display.
+   */
+  private updateMediaSessionPositionState(): void {
+    if (!('mediaSession' in navigator) || !this.currentTrack) return;
+
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: this.audio.duration || 0,
+        playbackRate: this.audio.playbackRate,
+        position: this.audio.currentTime,
+      });
+    } catch {
+      // Position state can fail if duration is not yet available
+    }
   }
 
   /**
@@ -168,6 +278,9 @@ export class PlaybackService {
 
       this.emit({ type: 'loaded', trackId: track.track_id });
 
+      // Update Media Session with track info
+      this.updateMediaSessionMetadata(track);
+
       // Start prefetching next track
       this.prefetchNextTrack();
     } catch (error) {
@@ -206,6 +319,7 @@ export class PlaybackService {
    */
   seek(positionMs: number): void {
     this.audio.currentTime = positionMs / 1000;
+    this.updateMediaSessionPositionState();
   }
 
   /**
@@ -421,6 +535,9 @@ export class PlaybackService {
   destroy(): void {
     if (this.currentBlobUrl) {
       URL.revokeObjectURL(this.currentBlobUrl);
+    }
+    if (this.mediaSessionArtworkUrl) {
+      URL.revokeObjectURL(this.mediaSessionArtworkUrl);
     }
     this.audio.pause();
     this.eventHandlers.clear();
