@@ -80,7 +80,9 @@ export class MusicSpaceService {
    */
   async getTrack(trackId: string): Promise<Track> {
     const data = await this.space.getEncryptedData(`library/tracks/${trackId}`);
-    return JSON.parse(bytesToString(data)) as Track;
+    const track = JSON.parse(bytesToString(data)) as Track | null;
+    if (!track) throw new Error(`Track not found: ${trackId}`);
+    return track;
   }
 
   /**
@@ -98,7 +100,9 @@ export class MusicSpaceService {
    */
   async getAlbum(albumId: string): Promise<Album> {
     const data = await this.space.getEncryptedData(`library/albums/${albumId}`);
-    return JSON.parse(bytesToString(data)) as Album;
+    const album = JSON.parse(bytesToString(data)) as Album | null;
+    if (!album) throw new Error(`Album not found: ${albumId}`);
+    return album;
   }
 
   /**
@@ -116,7 +120,9 @@ export class MusicSpaceService {
    */
   async getArtist(artistId: string): Promise<Artist> {
     const data = await this.space.getEncryptedData(`library/artists/${artistId}`);
-    return JSON.parse(bytesToString(data)) as Artist;
+    const artist = JSON.parse(bytesToString(data)) as Artist | null;
+    if (!artist) throw new Error(`Artist not found: ${artistId}`);
+    return artist;
   }
 
   /**
@@ -249,7 +255,9 @@ export class MusicSpaceService {
    */
   async getPlaylist(playlistId: string): Promise<Playlist> {
     const data = await this.space.getEncryptedData(`user/${this.userId}/playlists/${playlistId}`);
-    return JSON.parse(bytesToString(data)) as Playlist;
+    const playlist = JSON.parse(bytesToString(data)) as Playlist | null;
+    if (!playlist) throw new Error(`Playlist not found: ${playlistId}`);
+    return playlist;
   }
 
   /**
@@ -270,6 +278,133 @@ export class MusicSpaceService {
       `user/${this.userId}/playlists/${playlistId}`,
       stringToBytes('null')
     );
+  }
+
+  // ============================================================
+  // Delete Operations
+  // ============================================================
+
+  /**
+   * Delete a blob from storage.
+   */
+  async deleteBlob(blobId: string): Promise<void> {
+    await this.space.deleteBlob(blobId);
+  }
+
+  /**
+   * Delete a track and clean up related data.
+   *
+   * Removes the track from: kv storage, search index, its album's track list,
+   * and deletes the audio blob. Artwork blob is only deleted if it differs
+   * from the album's artwork (to avoid breaking shared artwork references).
+   *
+   * Playlist cleanup and cache cleanup are the caller's responsibility.
+   */
+  async deleteTrack(trackId: string): Promise<void> {
+    const track = await this.getTrack(trackId);
+
+    // Delete audio blob
+    try {
+      await this.deleteBlob(track.audio_blob_id);
+    } catch (err) {
+      console.warn('Failed to delete audio blob:', err);
+    }
+
+    // Delete artwork blob only if it differs from the album's
+    if (track.artwork_blob_id) {
+      try {
+        const album = await this.getAlbum(track.album_id);
+        if (track.artwork_blob_id !== album.artwork_blob_id) {
+          await this.deleteBlob(track.artwork_blob_id);
+        }
+      } catch {
+        // Album may not exist; safe to delete artwork blob
+        try {
+          await this.deleteBlob(track.artwork_blob_id);
+        } catch (err) {
+          console.warn('Failed to delete artwork blob:', err);
+        }
+      }
+    }
+
+    // Remove track from its album's track_ids
+    try {
+      const album = await this.getAlbum(track.album_id);
+      album.track_ids = album.track_ids.filter(id => id !== trackId);
+      await this.setAlbum(album);
+    } catch {
+      // Album may not exist
+    }
+
+    // Remove from search index
+    try {
+      const index = await this.getSearchIndex();
+      index.tracks = index.tracks.filter(t => t.id !== trackId);
+      index.last_updated = Date.now();
+      await this.setSearchIndex(index);
+    } catch (err) {
+      console.warn('Failed to update search index:', err);
+    }
+
+    // Delete track kv data
+    await this.space.setEncryptedData(
+      `library/tracks/${trackId}`,
+      stringToBytes('null')
+    );
+  }
+
+  /**
+   * Delete an album and all its tracks.
+   *
+   * Accepts an Album object directly since the caller may have a
+   * synthetic album (built from search index) that doesn't exist in kv.
+   *
+   * Removes every track in the album (including their audio blobs),
+   * then deletes the album artwork blob, album kv data, and updates
+   * the artist's album list.
+   *
+   * Playlist cleanup and cache cleanup are the caller's responsibility.
+   *
+   * @returns The list of deleted track IDs for caller cleanup.
+   */
+  async deleteAlbum(album: Album): Promise<string[]> {
+    const albumId = album.album_id;
+    const deletedTrackIds = [...album.track_ids];
+
+    // Delete all tracks (this skips shared artwork blob deletion)
+    for (const trackId of album.track_ids) {
+      try {
+        await this.deleteTrack(trackId);
+      } catch (err) {
+        console.warn(`Failed to delete track ${trackId}:`, err);
+      }
+    }
+
+    // Delete album artwork blob
+    if (album.artwork_blob_id) {
+      try {
+        await this.deleteBlob(album.artwork_blob_id);
+      } catch (err) {
+        console.warn('Failed to delete album artwork blob:', err);
+      }
+    }
+
+    // Update artist's album_ids
+    try {
+      const artist = await this.getArtist(album.artist_id);
+      artist.album_ids = artist.album_ids.filter(id => id !== albumId);
+      await this.setArtist(artist);
+    } catch {
+      // Artist may not exist
+    }
+
+    // Delete album kv data
+    await this.space.setEncryptedData(
+      `library/albums/${albumId}`,
+      stringToBytes('null')
+    );
+
+    return deletedTrackIds;
   }
 
   // ============================================================

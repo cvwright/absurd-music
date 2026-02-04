@@ -158,6 +158,8 @@ export class MusicApp extends LitElement {
         @navigate=${this.handleNavigate}
         @playlist-updated=${this.loadPlaylists}
         @playlist-deleted=${this.loadPlaylists}
+        @track-deleted=${this.loadPlaylists}
+        @album-deleted=${this.loadPlaylists}
         @add-to-playlist=${this.handleAddToPlaylist}
         @create-playlist-with-track=${this.handleCreatePlaylistWithTrack}
       >

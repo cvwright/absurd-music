@@ -380,6 +380,10 @@ export class LibraryView extends LitElement {
       margin: var(--spacing-xs) 0;
     }
 
+    .track-menu-item.danger {
+      color: var(--color-error, #e74c3c);
+    }
+
     /* Sort and filter controls */
     .controls-row {
       display: flex;
@@ -622,7 +626,8 @@ export class LibraryView extends LitElement {
       this.albums = await Promise.all(
         albumEntries.map(async ([key, val]) => {
           try {
-            return await this.musicSpace!.getAlbum(key);
+            const albumId = await this.musicSpace!.generateAlbumId(val.artist, val.title);
+            return await this.musicSpace!.getAlbum(albumId);
           } catch {
             // Album record doesn't exist, return synthetic album
             return {
@@ -1007,6 +1012,13 @@ export class LibraryView extends LitElement {
           </svg>
           New Playlist...
         </button>
+        <div class="track-menu-divider"></div>
+        <button class="track-menu-item danger" @click=${(e: Event) => this.handleDeleteTrack(e, trackId)}>
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+          </svg>
+          Delete
+        </button>
       </div>
     `;
   }
@@ -1036,6 +1048,53 @@ export class LibraryView extends LitElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  private async handleDeleteTrack(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+
+    const track = this.tracks.find(t => t.id === trackId);
+    const title = track?.title ?? 'this track';
+    if (!confirm(`Delete "${title}"? This will remove the track from your library and all playlists.`)) return;
+    if (!this.musicSpace) return;
+
+    try {
+      await this.musicSpace.deleteTrack(trackId);
+
+      // Remove from all playlists
+      for (const entry of this.playlists) {
+        try {
+          const playlist = await this.musicSpace.getPlaylist(entry.playlist_id);
+          if (playlist.track_ids.includes(trackId)) {
+            playlist.track_ids = playlist.track_ids.filter(id => id !== trackId);
+            playlist.updated_at = Date.now();
+            await this.musicSpace.setPlaylist(playlist);
+          }
+        } catch {
+          // Playlist may not exist
+        }
+      }
+
+      // Remove from local cache
+      try {
+        await this.cacheService?.removeTrack(trackId);
+      } catch {
+        // Cache cleanup is best-effort
+      }
+
+      // Update local state
+      this.tracks = this.tracks.filter(t => t.id !== trackId);
+      this.isEmpty = this.tracks.length === 0;
+
+      this.dispatchEvent(new CustomEvent('track-deleted', {
+        detail: { trackId },
+        bubbles: true,
+        composed: true,
+      }));
+    } catch (err) {
+      console.error('Failed to delete track:', err);
+    }
   }
 
   private formatDuration(ms: number): string {

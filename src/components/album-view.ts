@@ -280,6 +280,16 @@ export class AlbumView extends LitElement {
       height: 16px;
       flex-shrink: 0;
     }
+
+    .menu-divider {
+      height: 1px;
+      background-color: var(--color-bg-highlight);
+      margin: var(--spacing-xs) 0;
+    }
+
+    .menu-item.danger {
+      color: var(--color-error, #e74c3c);
+    }
   `;
 
   @property({ type: String })
@@ -517,6 +527,13 @@ export class AlbumView extends LitElement {
                     </svg>
                     ${this.uploadingArtwork ? 'Uploading...' : 'Upload artwork'}
                   </button>
+                  <div class="menu-divider"></div>
+                  <button class="menu-item danger" @click=${this.handleDeleteAlbum}>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                    Delete album
+                  </button>
                 </div>
               ` : ''}
             </div>
@@ -646,6 +663,62 @@ export class AlbumView extends LitElement {
       console.error('Failed to download artwork:', err);
     } finally {
       this.fetchingArtwork = false;
+    }
+  }
+
+  private async handleDeleteAlbum() {
+    if (!this.album || !this.musicSpace) return;
+
+    this.menuOpen = false;
+    const trackCount = this.tracks.length;
+    const message = trackCount > 0
+      ? `Delete "${this.album.title}" and its ${trackCount} track${trackCount === 1 ? '' : 's'}? This cannot be undone.`
+      : `Delete "${this.album.title}"? This cannot be undone.`;
+    if (!confirm(message)) return;
+
+    try {
+      const deletedTrackIds = await this.musicSpace.deleteAlbum(this.album);
+
+      // Remove deleted tracks from all playlists
+      try {
+        const playlistIndex = await this.musicSpace.getPlaylistIndex();
+        const deletedSet = new Set(deletedTrackIds);
+        for (const entry of playlistIndex.playlists) {
+          try {
+            const playlist = await this.musicSpace.getPlaylist(entry.playlist_id);
+            const before = playlist.track_ids.length;
+            playlist.track_ids = playlist.track_ids.filter(id => !deletedSet.has(id));
+            if (playlist.track_ids.length !== before) {
+              playlist.updated_at = Date.now();
+              await this.musicSpace.setPlaylist(playlist);
+            }
+          } catch {
+            // Playlist may not exist
+          }
+        }
+      } catch {
+        // Playlist index may not exist
+      }
+
+      // Remove deleted tracks from local cache
+      if (this.cacheService) {
+        for (const trackId of deletedTrackIds) {
+          try {
+            await this.cacheService.removeTrack(trackId);
+          } catch {
+            // Cache cleanup is best-effort
+          }
+        }
+      }
+
+      this.dispatchEvent(new CustomEvent('album-deleted', {
+        detail: { albumId: this.album.album_id },
+        bubbles: true,
+        composed: true,
+      }));
+      this.goBack();
+    } catch (err) {
+      console.error('Failed to delete album:', err);
     }
   }
 
