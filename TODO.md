@@ -19,7 +19,7 @@
 ## UX Polish
 18. Keyboard shortcuts - Space for play/pause, arrows for seek/volume, J/K for prev/next
 ~~19. Media Session API - OS media controls (lock screen, notification area, headphone buttons)~~
-20. Drag and drop imports - Drop zone in addition to file picker
+20. ~~Drag and drop imports - Drop zone in addition to file picker~~
 21. Queue management UI - View and reorder the playback queue
 22. Gapless playback / crossfade - For live albums and classical music
 
