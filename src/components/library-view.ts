@@ -1342,10 +1342,62 @@ export class LibraryView extends LitElement {
     this.dragCounter = 0;
     this.draggingOver = false;
 
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    if (files.length > 0) {
-      await this.importFiles(files);
+    const items = e.dataTransfer?.items;
+    if (!items || items.length === 0) return;
+
+    // Use webkitGetAsEntry to support recursive folder drops
+    const entries: FileSystemEntry[] = [];
+    for (const item of Array.from(items)) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) entries.push(entry);
     }
+
+    if (entries.length > 0) {
+      const files = await this.collectFilesFromEntries(entries);
+      if (files.length > 0) {
+        await this.importFiles(files);
+      }
+    }
+  }
+
+  /** Recursively collect File objects from FileSystemEntry items. */
+  private async collectFilesFromEntries(entries: FileSystemEntry[]): Promise<File[]> {
+    const files: File[] = [];
+
+    for (const entry of entries) {
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve, reject) => {
+          (entry as FileSystemFileEntry).file(resolve, reject);
+        });
+        files.push(file);
+      } else if (entry.isDirectory) {
+        const dirEntries = await this.readAllDirectoryEntries(entry as FileSystemDirectoryEntry);
+        const nested = await this.collectFilesFromEntries(dirEntries);
+        files.push(...nested);
+      }
+    }
+
+    return files;
+  }
+
+  /** Read all entries from a directory, handling the 100-entry batch limit. */
+  private readAllDirectoryEntries(directory: FileSystemDirectoryEntry): Promise<FileSystemEntry[]> {
+    const reader = directory.createReader();
+    const allEntries: FileSystemEntry[] = [];
+
+    return new Promise((resolve, reject) => {
+      const readBatch = () => {
+        reader.readEntries((batch) => {
+          if (batch.length === 0) {
+            resolve(allEntries);
+          } else {
+            allEntries.push(...batch);
+            readBatch();
+          }
+        }, reject);
+      };
+      readBatch();
+    });
   }
 
   private async openImport() {
