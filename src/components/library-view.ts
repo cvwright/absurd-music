@@ -6,6 +6,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import '@lit-labs/virtualizer';
 import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
 import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
@@ -153,6 +154,14 @@ export class LibraryView extends LitElement {
     .track-list {
       display: flex;
       flex-direction: column;
+      min-height: 0;
+    }
+
+    .track-list lit-virtualizer {
+      flex: 1;
+      min-height: 200px;
+      max-height: calc(100vh - 300px);
+      overflow: auto;
     }
 
     .track-header {
@@ -238,6 +247,8 @@ export class LibraryView extends LitElement {
       border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background-color var(--transition-fast);
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .track-item:hover {
@@ -996,36 +1007,39 @@ export class LibraryView extends LitElement {
           <span>Duration</span>
           <span></span>
         </div>
-        ${tracks.map((track, index) => html`
-          <div class="track-item">
-            <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
-            <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
-              ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
-                ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
-                : html`${this.loadArtwork(track)}`}
+        <lit-virtualizer
+          .items=${tracks}
+          .renderItem=${(track: TrackEntry, index: number) => html`
+            <div class="track-item">
+              <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
+              <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
+                ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
+                  ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
+                  : html`${this.loadArtwork(track)}`}
+              </div>
+              <div class="track-info" @click=${() => this.playTrack(track.id)}>
+                <span class="track-title">${track.title}</span>
+                <span class="track-artist">${track.artist}</span>
+              </div>
+              <span class="track-album" @click=${() => this.playTrack(track.id)}>${track.album}</span>
+              <span class="track-duration" @click=${() => this.playTrack(track.id)}>${this.formatDuration(track.duration_ms)}</span>
+              <div class="track-menu-container">
+                <button
+                  class="track-menu-btn"
+                  @click=${(e: Event) => this.toggleTrackMenu(e, track.id)}
+                  title="More options"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="2"/>
+                    <circle cx="12" cy="12" r="2"/>
+                    <circle cx="12" cy="19" r="2"/>
+                  </svg>
+                </button>
+                ${this.trackMenuOpen === track.id ? this.renderTrackMenu(track.id) : ''}
+              </div>
             </div>
-            <div class="track-info" @click=${() => this.playTrack(track.id)}>
-              <span class="track-title">${track.title}</span>
-              <span class="track-artist">${track.artist}</span>
-            </div>
-            <span class="track-album" @click=${() => this.playTrack(track.id)}>${track.album}</span>
-            <span class="track-duration" @click=${() => this.playTrack(track.id)}>${this.formatDuration(track.duration_ms)}</span>
-            <div class="track-menu-container">
-              <button
-                class="track-menu-btn"
-                @click=${(e: Event) => this.toggleTrackMenu(e, track.id)}
-                title="More options"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="5" r="2"/>
-                  <circle cx="12" cy="12" r="2"/>
-                  <circle cx="12" cy="19" r="2"/>
-                </svg>
-              </button>
-              ${this.trackMenuOpen === track.id ? this.renderTrackMenu(track.id) : ''}
-            </div>
-          </div>
-        `)}
+          `}
+        ></lit-virtualizer>
       </div>
     `;
   }
