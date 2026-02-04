@@ -672,16 +672,17 @@ export class LibraryView extends LitElement {
       // Fetch actual album records where they exist, falling back to synthetic albums
       const albumEntries = Array.from(albumMap.entries());
       this.albums = await Promise.all(
-        albumEntries.map(async ([key, val]) => {
+        albumEntries.map(async ([_key, val]) => {
+          const albumId = await this.musicSpace!.generateAlbumId(val.artist, val.title);
           try {
-            const albumId = await this.musicSpace!.generateAlbumId(val.artist, val.title);
             return await this.musicSpace!.getAlbum(albumId);
           } catch {
+            const artistId = await this.musicSpace!.generateArtistId(val.artist);
             // Album record doesn't exist, return synthetic album
             return {
-              album_id: key,
+              album_id: albumId,
               title: val.title,
-              artist_id: val.artist,
+              artist_id: artistId,
               artist_name: val.artist,
               track_ids: [],
             };
@@ -689,11 +690,13 @@ export class LibraryView extends LitElement {
         })
       );
 
-      this.artists = Array.from(artistMap.keys()).map(name => ({
-        artist_id: name,
-        name,
-        album_ids: [],
-      }));
+      this.artists = await Promise.all(
+        Array.from(artistMap.keys()).map(async name => ({
+          artist_id: await this.musicSpace!.generateArtistId(name),
+          name,
+          album_ids: [],
+        }))
+      );
 
     } catch (err) {
       // Index doesn't exist yet (empty library)

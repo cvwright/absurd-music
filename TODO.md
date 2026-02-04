@@ -30,7 +30,7 @@
 26. Storage usage visibility - Show cache size, allow manual clearing
 
 ## Performance
-27. Virtual scrolling - For large libraries (thousands of tracks)
+27. ~~Virtual scrolling - For large libraries (thousands of tracks)~~
 28. Lazy image loading - Load artwork on scroll
 29. Service worker - Offline support and faster repeat visits
 

@@ -368,22 +368,34 @@ export class AlbumView extends LitElement {
       } catch {
         // Album object may not exist, build from search index
         const index = await this.musicSpace.getSearchIndex();
-        const albumTracks = index.tracks.filter(t => {
-          // albumId is formatted as "artist|album"
-          const parts = this.albumId.split('|');
-          return parts.length === 2 && t.artist === parts[0] && t.album === parts[1];
-        });
+
+        // Find tracks whose generated album ID matches this.albumId
+        const albumTracks: typeof index.tracks = [];
+        let matchedArtist = '';
+        let matchedTitle = '';
+        const seen = new Map<string, string>();
+        for (const t of index.tracks) {
+          const key = `${t.artist}|${t.album}`;
+          if (!seen.has(key)) {
+            seen.set(key, await this.musicSpace.generateAlbumId(t.artist, t.album));
+          }
+          if (seen.get(key) === this.albumId) {
+            albumTracks.push(t);
+            matchedArtist = t.artist;
+            matchedTitle = t.album;
+          }
+        }
 
         if (albumTracks.length === 0) {
           throw new Error('Album not found');
         }
 
-        const parts = this.albumId.split('|');
+        const artistId = await this.musicSpace.generateArtistId(matchedArtist);
         this.album = {
           album_id: this.albumId,
-          title: parts[1] || 'Unknown Album',
-          artist_id: parts[0] || '',
-          artist_name: parts[0] || 'Unknown Artist',
+          title: matchedTitle,
+          artist_id: artistId,
+          artist_name: matchedArtist,
           track_ids: albumTracks.map(t => t.id),
         };
       }
@@ -595,8 +607,9 @@ export class AlbumView extends LitElement {
   }
 
   private goToArtist() {
+    if (!this.album?.artist_id) return;
     this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { view: 'artist', params: { id: this.album?.artist_id || this.album?.artist_name } },
+      detail: { view: 'artist', params: { id: this.album.artist_id } },
       bubbles: true,
       composed: true,
     }));

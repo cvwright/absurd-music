@@ -345,7 +345,8 @@ export class ArtistView extends LitElement {
 
       // Try to get full album data for year info
       this.albums = await Promise.all(
-        Array.from(albumMap.entries()).map(async ([albumId, data]) => {
+        Array.from(albumMap.entries()).map(async ([_key, data]) => {
+          const albumId = await this.musicSpace!.generateAlbumId(this.artist!.name, data.title);
           try {
             const album = await this.musicSpace!.getAlbum(albumId);
             return album as AlbumWithArtwork;
