@@ -481,6 +481,38 @@ export class LibraryView extends LitElement {
       padding: var(--spacing-xl);
       color: var(--color-text-subdued);
     }
+
+    /* Drop zone */
+    :host {
+      position: relative;
+    }
+
+    .drop-overlay {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(var(--color-accent-rgb, 29, 185, 84), 0.08);
+      border: 2px dashed var(--color-accent);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--spacing-sm);
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .drop-overlay svg {
+      width: 48px;
+      height: 48px;
+      color: var(--color-accent);
+    }
+
+    .drop-overlay span {
+      font-size: var(--font-size-lg);
+      font-weight: 600;
+      color: var(--color-accent);
+    }
   `;
 
   @property({ attribute: false })
@@ -527,6 +559,11 @@ export class LibraryView extends LitElement {
 
   @state()
   private genreFilter = '';
+
+  @state()
+  private draggingOver = false;
+
+  private dragCounter = 0;
 
   /** Cache of artwork object URLs by blob ID (shared across tracks on same album) */
   private artworkUrls = new Map<string, string>();
@@ -690,7 +727,21 @@ export class LibraryView extends LitElement {
         </div>
       </div>
 
-      <div class="content">
+      <div
+        class="content"
+        @dragenter=${this.handleDragEnter}
+        @dragover=${this.handleDragOver}
+        @dragleave=${this.handleDragLeave}
+        @drop=${this.handleDrop}
+      >
+        ${this.draggingOver ? html`
+          <div class="drop-overlay">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+            </svg>
+            <span>Drop files to import</span>
+          </div>
+        ` : ''}
         ${this.isEmpty ? this.renderEmptyState() : html`
           ${this.renderControls()}
           ${this.renderContent()}
@@ -1269,14 +1320,45 @@ export class LibraryView extends LitElement {
     }));
   }
 
+  private handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    this.dragCounter++;
+    this.draggingOver = true;
+  }
+
+  private handleDragOver(e: DragEvent) {
+    e.preventDefault();
+  }
+
+  private handleDragLeave(_e: DragEvent) {
+    this.dragCounter--;
+    if (this.dragCounter === 0) {
+      this.draggingOver = false;
+    }
+  }
+
+  private async handleDrop(e: DragEvent) {
+    e.preventDefault();
+    this.dragCounter = 0;
+    this.draggingOver = false;
+
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) {
+      await this.importFiles(files);
+    }
+  }
+
   private async openImport() {
+    const files = await ImportService.selectFiles();
+    if (files.length > 0) {
+      await this.importFiles(files);
+    }
+  }
+
+  /** Shared import logic for both file picker and drag-and-drop. */
+  private async importFiles(files: File[]) {
     if (!this.musicSpace) {
       console.error('Cannot import: not authenticated');
-      return;
-    }
-
-    const files = await ImportService.selectFiles();
-    if (files.length === 0) {
       return;
     }
 
