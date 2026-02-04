@@ -24,7 +24,7 @@
 22. Gapless playback / crossfade - For live albums and classical music
 
 ## Library Management
-23. Delete tracks/albums - Remove items from library
+23. ~~Delete tracks/albums - Remove items from library~~
 24. Duplicate detection - Warn when re-importing existing files
 25. Batch metadata editing - Fix artist/album names across multiple tracks
 26. Storage usage visibility - Show cache size, allow manual clearing
