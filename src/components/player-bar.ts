@@ -262,6 +262,9 @@ export class PlayerBar extends LitElement {
 
   private unsubscribe: (() => void) | null = null;
 
+  /** Track ID for which artwork is currently being loaded (to detect stale loads) */
+  private loadingArtworkForTrackId: string | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
     this.subscribeToPlayback();
@@ -511,11 +514,14 @@ export class PlayerBar extends LitElement {
   }
 
   private async loadArtwork(track: Track) {
+    const trackId = track.track_id;
+    this.loadingArtworkForTrackId = trackId;
+
     const blobId = track.artwork_blob_id;
     const blobKey = track.artwork_encryption?.key;
     if (!blobId || !blobKey || !this.musicSpace) {
-      // Clear artwork if track has none
-      if (this.artworkUrl) {
+      // Clear artwork if track has none (only if still the current track)
+      if (this.loadingArtworkForTrackId === trackId && this.artworkUrl) {
         URL.revokeObjectURL(this.artworkUrl);
         this.artworkUrl = null;
       }
@@ -527,6 +533,8 @@ export class PlayerBar extends LitElement {
       if (this.cacheService) {
         const cached = await this.cacheService.getArtwork(blobId);
         if (cached) {
+          // Ignore if a newer track started loading
+          if (this.loadingArtworkForTrackId !== trackId) return;
           if (this.artworkUrl) {
             URL.revokeObjectURL(this.artworkUrl);
           }
@@ -538,6 +546,10 @@ export class PlayerBar extends LitElement {
 
       // Download from server
       const data = await this.musicSpace.downloadArtworkBlob(blobId, blobKey);
+
+      // Ignore if a newer track started loading
+      if (this.loadingArtworkForTrackId !== trackId) return;
+
       const mimeType = track.artwork_mime_type ?? 'image/jpeg';
 
       // Cache in IndexedDB for future sessions
@@ -552,6 +564,8 @@ export class PlayerBar extends LitElement {
       const blob = new Blob([data], { type: mimeType });
       this.artworkUrl = URL.createObjectURL(blob);
     } catch (err) {
+      // Ignore errors for stale requests
+      if (this.loadingArtworkForTrackId !== trackId) return;
       console.warn(`Failed to load artwork for track ${track.track_id}:`, err);
       if (this.artworkUrl) {
         URL.revokeObjectURL(this.artworkUrl);

@@ -47,6 +47,9 @@ export class PlaybackService {
   // Media Session artwork URL (for cleanup)
   private mediaSessionArtworkUrl: string | null = null;
 
+  // Track ID for which Media Session artwork is being loaded (to detect stale loads)
+  private loadingMediaSessionArtworkForTrackId: string | null = null;
+
   constructor() {
     this.audio = new Audio();
     this.setupAudioListeners();
@@ -160,11 +163,8 @@ export class PlaybackService {
   private async updateMediaSessionMetadata(track: Track): Promise<void> {
     if (!('mediaSession' in navigator)) return;
 
-    // Clean up previous artwork blob URL
-    if (this.mediaSessionArtworkUrl) {
-      URL.revokeObjectURL(this.mediaSessionArtworkUrl);
-      this.mediaSessionArtworkUrl = null;
-    }
+    const trackId = track.track_id;
+    this.loadingMediaSessionArtworkForTrackId = trackId;
 
     // Build artwork array if we have artwork and its encryption key
     let artwork: MediaImage[] = [];
@@ -174,6 +174,16 @@ export class PlaybackService {
           track.artwork_blob_id,
           track.artwork_encryption.key
         );
+
+        // Ignore if a newer track started loading
+        if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
+
+        // Clean up previous artwork blob URL
+        if (this.mediaSessionArtworkUrl) {
+          URL.revokeObjectURL(this.mediaSessionArtworkUrl);
+          this.mediaSessionArtworkUrl = null;
+        }
+
         const mimeType = track.artwork_mime_type ?? 'image/jpeg';
         const blob = new Blob([artworkData], { type: mimeType });
         this.mediaSessionArtworkUrl = URL.createObjectURL(blob);
@@ -181,9 +191,20 @@ export class PlaybackService {
           { src: this.mediaSessionArtworkUrl, sizes: '512x512', type: mimeType },
         ];
       } catch (e) {
+        // Ignore errors for stale requests
+        if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
         console.error('Failed to load artwork for Media Session:', e);
       }
+    } else {
+      // No artwork - clean up previous if this is still the current track
+      if (this.mediaSessionArtworkUrl) {
+        URL.revokeObjectURL(this.mediaSessionArtworkUrl);
+        this.mediaSessionArtworkUrl = null;
+      }
     }
+
+    // Only update metadata if this is still the current track
+    if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
