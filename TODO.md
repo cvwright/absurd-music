@@ -40,7 +40,7 @@
 32. Focus indicators - Visible focus states for keyboard users
 
 ## Mobile
-33. Responsive layout - Mobile-friendly sidebar and main content
+33. ~~Responsive layout - Mobile-friendly sidebar and main content~~
 34. Touch gestures - Swipe for next/prev, long press for context menu
 35. PWA manifest - Install to home screen
 
@@ -48,3 +48,6 @@
 36. Last.fm scrobbling - Track listening history
 37. Lyrics display - Fetch or parse embedded lyrics
 38. MusicBrainz enrichment - Better metadata than iTunes alone
+
+## Real-world Readiness
+39. ~~Embed space id in the url to simplify login~~

@@ -158,9 +158,32 @@ export class MusicApp extends LitElement {
   @state()
   private showCreatePlaylistModal = false;
 
+  @state()
+  private urlSpaceId: string | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
+    this.urlSpaceId = this.getSpaceIdFromUrl();
     this.tryAutoLogin();
+  }
+
+  private getSpaceIdFromUrl(): string | null {
+    const match = window.location.pathname.match(/^\/space\/(.+)$/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private updateUrlForSpace(spaceId: string) {
+    const newPath = `/space/${encodeURIComponent(spaceId)}`;
+    if (window.location.pathname !== newPath) {
+      history.replaceState(null, '', newPath);
+    }
   }
 
   private async tryAutoLogin() {
@@ -171,6 +194,7 @@ export class MusicApp extends LitElement {
         await this.musicSpace.authenticate();
         await this.initServices();
         this.authenticated = true;
+        this.updateUrlForSpace(savedConfig.spaceId);
       } catch {
         // Saved credentials failed, clear them and show login
         clearCredentials();
@@ -193,7 +217,11 @@ export class MusicApp extends LitElement {
 
   render() {
     if (!this.authenticated) {
-      return html`<login-view @login=${this.handleLogin}></login-view>`;
+      return html`<login-view
+        .spaceId=${this.urlSpaceId ?? ''}
+        ?spaceIdFromUrl=${!!this.urlSpaceId}
+        @login=${this.handleLogin}
+      ></login-view>`;
     }
 
     return html`
@@ -331,6 +359,7 @@ export class MusicApp extends LitElement {
       await this.initServices();
       saveCredentials(e.detail);
       this.authenticated = true;
+      this.updateUrlForSpace(e.detail.spaceId);
     } catch (err) {
       this.musicSpace = null;
       const loginView = this.shadowRoot?.querySelector('login-view');

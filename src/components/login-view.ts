@@ -6,7 +6,7 @@
  */
 
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { getPublicKeyAsync } from '@noble/ed25519';
 import { decodeBase64 } from 'reeeductio';
 import type { MusicSpaceConfig } from '@/services/music-space.js';
@@ -88,6 +88,14 @@ export class LoginView extends LitElement {
       cursor: not-allowed;
     }
 
+    .prefilled-value {
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-sm);
+      font-family: monospace;
+      word-break: break-all;
+      margin-bottom: var(--spacing-md);
+    }
+
     .error {
       color: var(--color-error);
       font-size: var(--font-size-sm);
@@ -96,7 +104,8 @@ export class LoginView extends LitElement {
     }
   `;
 
-  @state() private spaceId = '';
+  @property() spaceId = '';
+  @property({ type: Boolean }) spaceIdFromUrl = false;
   @state() private privateKey = '';
   @state() private symmetricRoot = '';
   @state() private serverUrl = '';
@@ -110,14 +119,19 @@ export class LoginView extends LitElement {
 
         ${this.error ? html`<div class="error">${this.error}</div>` : ''}
 
-        <label for="spaceId">Space ID</label>
-        <input
-          id="spaceId"
-          type="text"
-          .value=${this.spaceId}
-          @input=${(e: Event) => this.spaceId = (e.target as HTMLInputElement).value}
-          placeholder="Base64-encoded space ID"
-        />
+        ${this.spaceIdFromUrl ? html`
+          <label>Space</label>
+          <div class="prefilled-value">${this.spaceId}</div>
+        ` : html`
+          <label for="spaceId">Space ID</label>
+          <input
+            id="spaceId"
+            type="text"
+            .value=${this.spaceId}
+            @input=${(e: Event) => this.spaceId = (e.target as HTMLInputElement).value}
+            placeholder="Base64-encoded space ID"
+          />
+        `}
 
         <label for="privateKey">Private Key</label>
         <input
