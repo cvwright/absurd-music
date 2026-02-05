@@ -12,7 +12,7 @@ import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNoti
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 import './track-list.js';
 
-type Tab = 'songs' | 'albums' | 'artists';
+type Tab = 'songs' | 'albums' | 'artists' | 'playlists';
 type SortField = 'title' | 'artist' | 'album' | 'duration';
 type SortDirection = 'asc' | 'desc';
 
@@ -624,6 +624,10 @@ export class LibraryView extends LitElement {
         return [
           { value: 'title', label: 'Name' },
         ];
+      case 'playlists':
+        return [
+          { value: 'title', label: 'Name' },
+        ];
     }
   }
 
@@ -774,6 +778,8 @@ export class LibraryView extends LitElement {
         return this.renderAlbumGrid();
       case 'artists':
         return this.renderArtistList();
+      case 'playlists':
+        return this.renderPlaylistList();
     }
   }
 
@@ -1104,6 +1110,52 @@ export class LibraryView extends LitElement {
         `)}
       </div>
     `;
+  }
+
+  private renderPlaylistList() {
+    let filtered = this.playlists as PlaylistIndexEntry[];
+
+    if (this.filterText) {
+      const search = this.filterText.toLowerCase();
+      filtered = filtered.filter(p => p.name.toLowerCase().includes(search));
+    }
+
+    const sorted = [...filtered].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name);
+      return this.sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    if (sorted.length === 0 && this.filterText) {
+      return html`<div class="no-results">No playlists match "${this.filterText}"</div>`;
+    }
+
+    if (sorted.length === 0) {
+      return html`<div class="no-results">No playlists yet</div>`;
+    }
+
+    return html`
+      <div class="album-grid">
+        ${sorted.map(playlist => html`
+          <div class="album-card" @click=${() => this.navigateToPlaylist(playlist.playlist_id)}>
+            <div class="album-artwork artist-avatar">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+              </svg>
+            </div>
+            <div class="album-title">${playlist.name}</div>
+            <div class="album-artist">${playlist.track_count} ${playlist.track_count === 1 ? 'track' : 'tracks'}</div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  private navigateToPlaylist(playlistId: string) {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: { view: 'playlist', params: { id: playlistId } },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private navigateToArtist(artistId: string) {
