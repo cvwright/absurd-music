@@ -74,31 +74,6 @@ export class LibraryView extends LitElement {
       cursor: not-allowed;
     }
 
-    .tabs {
-      display: flex;
-      gap: var(--spacing-sm);
-    }
-
-    .tab {
-      padding: var(--spacing-sm) var(--spacing-md);
-      border-radius: var(--radius-full);
-      font-size: var(--font-size-sm);
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      background-color: transparent;
-      transition: all var(--transition-fast);
-    }
-
-    .tab:hover {
-      color: var(--color-text-primary);
-      background-color: var(--color-bg-highlight);
-    }
-
-    .tab.active {
-      color: var(--color-bg-primary);
-      background-color: var(--color-text-primary);
-    }
-
     .content {
       margin-top: var(--spacing-lg);
     }
@@ -545,26 +520,6 @@ export class LibraryView extends LitElement {
               ${this.importing ? 'Importing...' : 'Import'}
             </button>
           ` : ''}
-        </div>
-        <div class="tabs">
-          <button
-            class="tab ${this.activeTab === 'songs' ? 'active' : ''}"
-            @click=${() => (this.activeTab = 'songs')}
-          >
-            Songs
-          </button>
-          <button
-            class="tab ${this.activeTab === 'albums' ? 'active' : ''}"
-            @click=${() => (this.activeTab = 'albums')}
-          >
-            Albums
-          </button>
-          <button
-            class="tab ${this.activeTab === 'artists' ? 'active' : ''}"
-            @click=${() => (this.activeTab = 'artists')}
-          >
-            Artists
-          </button>
         </div>
       </div>
 
