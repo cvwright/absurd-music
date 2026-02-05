@@ -255,6 +255,11 @@ export class LibraryView extends LitElement {
       background-color: var(--color-bg-highlight);
     }
 
+    .track-item.menu-open {
+      position: relative;
+      z-index: 10;
+    }
+
     .track-number {
       color: var(--color-text-subdued);
       text-align: center;
@@ -1013,7 +1018,7 @@ export class LibraryView extends LitElement {
         <lit-virtualizer
           .items=${tracks}
           .renderItem=${(track: TrackEntry, index: number) => html`
-            <div class="track-item">
+            <div class="track-item ${this.trackMenuOpen === track.id ? 'menu-open' : ''}">
               <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
               <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
                 ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
