@@ -114,7 +114,7 @@ export class MusicApp extends LitElement {
     @media (max-width: 768px) {
       :host {
         grid-template-columns: 1fr;
-        grid-template-rows: 1fr var(--player-height) var(--tab-bar-height);
+        grid-template-rows: 1fr 72px var(--tab-bar-height);
       }
 
       .sidebar {

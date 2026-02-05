@@ -32,7 +32,7 @@ export class LibraryView extends LitElement {
   static styles = css`
     :host {
       display: block;
-      padding: var(--spacing-lg);
+      padding: var(--spacing-lg) var(--spacing-md);
     }
 
     .header {
@@ -166,9 +166,9 @@ export class LibraryView extends LitElement {
 
     .track-header {
       display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 100px 40px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
+      grid-template-columns: 40px 40px 1fr 1fr 60px 40px;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-sm);
       border-bottom: 1px solid var(--color-bg-highlight);
       color: var(--color-text-subdued);
       font-size: var(--font-size-xs);
@@ -240,9 +240,9 @@ export class LibraryView extends LitElement {
     /* Track item */
     .track-item {
       display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 100px 40px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
+      grid-template-columns: 40px 40px 1fr 1fr 60px 40px;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-sm);
       align-items: center;
       border-radius: var(--radius-sm);
       cursor: pointer;
@@ -312,6 +312,21 @@ export class LibraryView extends LitElement {
     .track-duration {
       color: var(--color-text-subdued);
       text-align: right;
+    }
+
+    @media (max-width: 600px) {
+      .track-header {
+        grid-template-columns: 40px 40px 1fr 60px 40px;
+      }
+
+      .track-item {
+        grid-template-columns: 40px 40px 1fr 60px 40px;
+      }
+
+      .track-album,
+      .track-header .album-col {
+        display: none;
+      }
     }
 
     /* Track menu */
@@ -1011,7 +1026,7 @@ export class LibraryView extends LitElement {
           <span>#</span>
           <span></span>
           <span>Title</span>
-          <span>Album</span>
+          <span class="album-col">Album</span>
           <span>Duration</span>
           <span></span>
         </div>

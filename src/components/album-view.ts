@@ -148,7 +148,7 @@ export class AlbumView extends LitElement {
 
     .track-header {
       display: grid;
-      grid-template-columns: 40px 1fr 100px;
+      grid-template-columns: 40px 1fr 60px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       border-bottom: 1px solid var(--color-bg-highlight);
@@ -160,7 +160,7 @@ export class AlbumView extends LitElement {
 
     .track-item {
       display: grid;
-      grid-template-columns: 40px 1fr 100px;
+      grid-template-columns: 40px 1fr 60px;
       gap: var(--spacing-md);
       padding: var(--spacing-sm) var(--spacing-md);
       align-items: center;
