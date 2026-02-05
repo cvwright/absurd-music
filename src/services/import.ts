@@ -16,18 +16,19 @@ import type { MusicSpaceService } from './music-space.js';
 
 /** Supported audio MIME types */
 const SUPPORTED_TYPES = [
-  'audio/mpeg',      // MP3
-  'audio/mp4',       // AAC/M4A
-  'audio/x-m4a',     // M4A alternate
-  'audio/aac',       // AAC
-  'audio/flac',      // FLAC
-  'audio/ogg',       // OGG Vorbis
-  'audio/wav',       // WAV
-  'audio/x-wav',     // WAV alternate
+  'audio/mpeg',             // MP3
+  'audio/mp4',              // AAC/M4A
+  'audio/x-m4a',            // M4A alternate
+  'audio/aac',              // AAC
+  'audio/flac',             // FLAC
+  'audio/ogg',              // OGG Vorbis
+  'audio/wav',              // WAV
+  'audio/x-wav',            // WAV alternate
+  'audio/ogg; codecs=opus', // Opus
 ];
 
 /** File extensions to accept in picker */
-const ACCEPT_EXTENSIONS = '.mp3,.m4a,.aac,.flac,.ogg,.wav';
+const ACCEPT_EXTENSIONS = '.mp3,.m4a,.aac,.flac,.ogg,.wav,.opus';
 
 /** iTunes Search API endpoint */
 const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
@@ -66,19 +67,26 @@ class ImportServiceImpl {
    * Checks if a file has a supported audio MIME type.
    */
   private isSupportedType(file: File): boolean {
-    // Check MIME type first
+    const ext = file.name.split('.').pop()?.toLowerCase();
+
+    // Explicitly reject iTunes protected files
+    if (ext == "m4p") {
+      return false;
+    }
+
+    // Check MIME type before other extensions
     if (SUPPORTED_TYPES.includes(file.type)) {
       return true;
     }
+    
     // Fall back to extension check (some browsers report empty type)
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    return ['mp3', 'm4a', 'aac', 'flac', 'ogg', 'wav'].includes(ext ?? '');
+    return ACCEPT_EXTENSIONS.includes(ext ?? '');
   }
 
   /**
    * Parses metadata from a single audio file.
    */
-  async parseFile(file: File): Promise<ParsedTrackMetadata> {
+  async parseFile(file: File): Promise<ParsedTrackMetadata | null> {
     // Determine MIME type, fixing m4a files (some browsers report audio/x-m4a or empty)
     let mimeType = file.type || 'application/octet-stream';
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -86,10 +94,21 @@ class ImportServiceImpl {
       console.log("Setting mime type to audio/mp4");
       mimeType = 'audio/mp4';
     }
+    // Filter out iTunes m4p
+    if (ext === 'm4p') {
+      console.log(`Skipping "${file.name}": can't parse iTunes m4p`);
+      return null;
+    }
 
     // Read file and parse with explicit MIME type
     const buffer = new Uint8Array(await file.arrayBuffer());
-    const metadata = await parseBuffer(buffer, mimeType);
+    let metadata;
+    try {
+      metadata = await parseBuffer(buffer, mimeType);
+    } catch (e) {
+      console.warn(`Skipping "${file.name}": failed to parse audio metadata`, e);
+      return null;
+    }
     const { common, format } = metadata;
 
     // Extract embedded artwork (first picture)
@@ -125,7 +144,8 @@ class ImportServiceImpl {
    * Returns results in the same order as input.
    */
   async parseFiles(files: File[]): Promise<ParsedTrackMetadata[]> {
-    return Promise.all(files.map((f) => this.parseFile(f)));
+    const results = await Promise.all(files.map((f) => this.parseFile(f)));
+    return results.filter((r): r is ParsedTrackMetadata => r !== null);
   }
 
   /**
