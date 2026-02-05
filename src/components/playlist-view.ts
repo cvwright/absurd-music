@@ -7,8 +7,10 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import type { TemplateResult } from 'lit';
 import type { MusicSpaceService, CacheService, PlaylistService } from '@/services/index.js';
-import type { Playlist, Track } from '@/types/index.js';
+import type { Playlist, Track, TrackListItem } from '@/types/index.js';
+import './track-list.js';
 
 @customElement('playlist-view')
 export class PlaylistView extends LitElement {
@@ -205,119 +207,6 @@ export class PlaylistView extends LitElement {
     .shuffle-btn svg {
       width: 24px;
       height: 24px;
-    }
-
-    /* Track list */
-    .track-list {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .track-header {
-      display: grid;
-      grid-template-columns: 40px 48px 1fr 1fr 60px 40px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
-      border-bottom: 1px solid var(--color-bg-highlight);
-      color: var(--color-text-subdued);
-      font-size: var(--font-size-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    .track-item {
-      display: grid;
-      grid-template-columns: 40px 48px 1fr 1fr 60px 40px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
-      align-items: center;
-      border-radius: var(--radius-sm);
-      transition: background-color var(--transition-fast);
-    }
-
-    .track-item:hover {
-      background-color: var(--color-bg-highlight);
-    }
-
-    .track-item:hover .remove-btn {
-      opacity: 1;
-    }
-
-    .track-number {
-      color: var(--color-text-subdued);
-      text-align: center;
-    }
-
-    .track-artwork {
-      width: 40px;
-      height: 40px;
-      background-color: var(--color-bg-highlight);
-      border-radius: var(--radius-xs);
-      overflow: hidden;
-    }
-
-    .track-artwork img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .track-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      overflow: hidden;
-      cursor: pointer;
-    }
-
-    .track-title {
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-artist {
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-album {
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-duration {
-      color: var(--color-text-subdued);
-      text-align: right;
-    }
-
-    .remove-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--color-text-subdued);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: all var(--transition-fast);
-    }
-
-    .remove-btn:hover {
-      color: var(--color-error, #e74c3c);
-      background-color: var(--color-bg-highlight);
-    }
-
-    .remove-btn svg {
-      width: 16px;
-      height: 16px;
     }
 
     .loading, .error {
@@ -708,54 +597,44 @@ export class PlaylistView extends LitElement {
             </div>
           `
         : html`
-            <div class="track-list">
-              <div class="track-header">
-                <span>#</span>
-                <span></span>
-                <span>Title</span>
-                <span>Album</span>
-                <span>Duration</span>
-                <span></span>
-              </div>
-              ${this.tracks.map(
-                (track, index) => html`
-                  <div class="track-item">
-                    <span class="track-number">${index + 1}</span>
-                    <div class="track-artwork">
-                      ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
-                        ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
-                        : ''}
-                    </div>
-                    <div class="track-info" @click=${() => this.playTrack(index)}>
-                      <span class="track-title">${track.title}</span>
-                      <span class="track-artist">${track.artist_name}</span>
-                    </div>
-                    <span class="track-album">${track.album_name}</span>
-                    <span class="track-duration">${this.formatDuration(track.duration_ms)}</span>
-                    <button
-                      class="remove-btn"
-                      @click=${() => this.removeTrack(track.track_id)}
-                      title="Remove from playlist"
-                    >
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                          d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                `
-              )}
-            </div>
+            <track-list
+              .items=${this.getTrackListItems()}
+              show-artwork
+              show-album
+              .actionRenderer=${this.renderRemoveButton}
+              @track-click=${this.handleTrackListClick}
+            ></track-list>
           `}
     `;
   }
 
-  private formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  private getTrackListItems(): TrackListItem[] {
+    return this.tracks.map(track => ({
+      id: track.track_id,
+      title: track.title,
+      subtitle: track.artist_name,
+      album: track.album_name,
+      durationMs: track.duration_ms,
+      artworkUrl: track.artwork_blob_id ? this.artworkUrls.get(track.artwork_blob_id) : undefined,
+    }));
+  }
+
+  private renderRemoveButton = (item: TrackListItem): TemplateResult => {
+    return html`
+      <button
+        class="track-action-btn"
+        @click=${() => this.removeTrack(item.id)}
+        title="Remove from playlist"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+      </button>
+    `;
+  };
+
+  private handleTrackListClick(e: CustomEvent<{ item: TrackListItem; index: number }>) {
+    this.playTrack(e.detail.index);
   }
 
   private formatTotalDuration(ms: number): string {

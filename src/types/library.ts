@@ -238,6 +238,27 @@ export interface ImportNotification {
   imported_at: number;
 }
 
+/**
+ * Normalized track item for the shared track-list component.
+ * Parent views map their data (Track, TrackEntry, etc.) into this shape.
+ */
+export interface TrackListItem {
+  /** Unique identifier (track_id or id) */
+  id: string;
+  /** Track title */
+  title: string;
+  /** Primary subtitle line (artist name, or album name in artist-view) */
+  subtitle: string;
+  /** Album name, shown when the album column is enabled */
+  album?: string;
+  /** Duration in milliseconds */
+  durationMs: number;
+  /** Display number override (e.g., track_number). Defaults to 1-based index. */
+  displayNumber?: number;
+  /** Pre-resolved artwork object URL */
+  artworkUrl?: string;
+}
+
 /** Topic ID for import notifications */
 export const IMPORTS_TOPIC_ID = 'imports';
 

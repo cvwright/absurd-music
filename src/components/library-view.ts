@@ -5,11 +5,12 @@
  */
 
 import { LitElement, html, css } from 'lit';
+import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import '@lit-labs/virtualizer';
 import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
-import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry } from '@/types/index.js';
+import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry, TrackListItem } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
+import './track-list.js';
 
 type Tab = 'songs' | 'albums' | 'artists';
 type SortField = 'title' | 'artist' | 'album' | 'duration';
@@ -150,30 +151,10 @@ export class LibraryView extends LitElement {
       cursor: not-allowed;
     }
 
-    /* Track list */
-    .track-list {
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-
-    .track-list lit-virtualizer {
-      flex: 1;
+    track-list {
       min-height: 200px;
       max-height: calc(100vh - 300px);
       overflow: auto;
-    }
-
-    .track-header {
-      display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 60px 40px;
-      gap: var(--spacing-sm);
-      padding: var(--spacing-sm) var(--spacing-sm);
-      border-bottom: 1px solid var(--color-bg-highlight);
-      color: var(--color-text-subdued);
-      font-size: var(--font-size-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
     }
 
     /* Album grid */
@@ -235,184 +216,6 @@ export class LibraryView extends LitElement {
       width: 60%;
       height: 60%;
       color: var(--color-text-subdued);
-    }
-
-    /* Track item */
-    .track-item {
-      display: grid;
-      grid-template-columns: 40px 40px 1fr 1fr 60px 40px;
-      gap: var(--spacing-sm);
-      padding: var(--spacing-sm) var(--spacing-sm);
-      align-items: center;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: background-color var(--transition-fast);
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    .track-item:hover {
-      background-color: var(--color-bg-highlight);
-    }
-
-    .track-item.menu-open {
-      position: relative;
-      z-index: 10;
-    }
-
-    .track-number {
-      color: var(--color-text-subdued);
-      text-align: center;
-    }
-
-    .track-artwork {
-      width: 40px;
-      height: 40px;
-      border-radius: var(--radius-xs);
-      background-color: var(--color-bg-highlight);
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-
-    .track-artwork img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .track-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      overflow: hidden;
-    }
-
-    .track-title {
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-artist {
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-album {
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-duration {
-      color: var(--color-text-subdued);
-      text-align: right;
-    }
-
-    @media (max-width: 600px) {
-      .track-header {
-        grid-template-columns: 40px 40px 1fr 60px 40px;
-      }
-
-      .track-item {
-        grid-template-columns: 40px 40px 1fr 60px 40px;
-      }
-
-      .track-album,
-      .track-header .album-col {
-        display: none;
-      }
-    }
-
-    /* Track menu */
-    .track-menu-container {
-      position: relative;
-    }
-
-    .track-menu-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--color-text-subdued);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: all var(--transition-fast);
-    }
-
-    .track-item:hover .track-menu-btn {
-      opacity: 1;
-    }
-
-    .track-menu-btn:hover {
-      color: var(--color-text-primary);
-      background-color: var(--color-bg-highlight);
-    }
-
-    .track-menu-btn svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    .track-menu-dropdown {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      margin-top: var(--spacing-xs);
-      min-width: 200px;
-      background-color: var(--color-bg-elevated, #282828);
-      border-radius: var(--radius-sm);
-      box-shadow: 0 16px 24px rgba(0, 0, 0, 0.3);
-      padding: var(--spacing-xs) 0;
-      z-index: 100;
-    }
-
-    .track-menu-item {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-      width: 100%;
-      padding: var(--spacing-sm) var(--spacing-md);
-      background: transparent;
-      color: var(--color-text-primary);
-      font-size: var(--font-size-sm);
-      text-align: left;
-      transition: background-color var(--transition-fast);
-    }
-
-    .track-menu-item:hover {
-      background-color: var(--color-bg-highlight);
-    }
-
-    .track-menu-item svg {
-      width: 16px;
-      height: 16px;
-      flex-shrink: 0;
-    }
-
-    .track-menu-section-title {
-      padding: var(--spacing-xs) var(--spacing-md);
-      font-size: var(--font-size-xs);
-      color: var(--color-text-subdued);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .track-menu-divider {
-      height: 1px;
-      background-color: var(--color-bg-highlight);
-      margin: var(--spacing-xs) 0;
-    }
-
-    .track-menu-item.danger {
-      color: var(--color-error, #e74c3c);
     }
 
     /* Sort and filter controls */
@@ -619,8 +422,9 @@ export class LibraryView extends LitElement {
   private handleClickOutside(e: MouseEvent) {
     if (this.trackMenuOpen) {
       const path = e.composedPath();
-      const menuContainer = this.shadowRoot?.querySelector('.track-menu-container');
-      if (menuContainer && !path.includes(menuContainer)) {
+      const trackList = this.shadowRoot?.querySelector('track-list');
+      const menuContainer = trackList?.shadowRoot?.querySelector('.track-menu-container');
+      if (!menuContainer || !path.includes(menuContainer)) {
         this.trackMenuOpen = null;
       }
     }
@@ -632,6 +436,9 @@ export class LibraryView extends LitElement {
     }
     if (changedProperties.has('initialTab') && this.initialTab) {
       this.activeTab = this.initialTab;
+    }
+    if (changedProperties.has('trackMenuOpen')) {
+      this.shadowRoot?.querySelector('track-list')?.requestUpdate();
     }
   }
 
@@ -1021,50 +828,52 @@ export class LibraryView extends LitElement {
       return html`<div class="no-results">No songs match "${this.filterText}"</div>`;
     }
     return html`
-      <div class="track-list">
-        <div class="track-header">
-          <span>#</span>
-          <span></span>
-          <span>Title</span>
-          <span class="album-col">Album</span>
-          <span>Duration</span>
-          <span></span>
-        </div>
-        <lit-virtualizer
-          .items=${tracks}
-          .renderItem=${(track: TrackEntry, index: number) => html`
-            <div class="track-item ${this.trackMenuOpen === track.id ? 'menu-open' : ''}">
-              <span class="track-number" @click=${() => this.playTrack(track.id)}>${index + 1}</span>
-              <div class="track-artwork" @click=${() => this.playTrack(track.id)}>
-                ${track.artwork_blob_id && this.artworkUrls.get(track.artwork_blob_id)
-                  ? html`<img src=${this.artworkUrls.get(track.artwork_blob_id)!} alt="" />`
-                  : html`${this.loadArtwork(track)}`}
-              </div>
-              <div class="track-info" @click=${() => this.playTrack(track.id)}>
-                <span class="track-title">${track.title}</span>
-                <span class="track-artist">${track.artist}</span>
-              </div>
-              <span class="track-album" @click=${() => this.playTrack(track.id)}>${track.album}</span>
-              <span class="track-duration" @click=${() => this.playTrack(track.id)}>${this.formatDuration(track.duration_ms)}</span>
-              <div class="track-menu-container">
-                <button
-                  class="track-menu-btn"
-                  @click=${(e: Event) => this.toggleTrackMenu(e, track.id)}
-                  title="More options"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="5" r="2"/>
-                    <circle cx="12" cy="12" r="2"/>
-                    <circle cx="12" cy="19" r="2"/>
-                  </svg>
-                </button>
-                ${this.trackMenuOpen === track.id ? this.renderTrackMenu(track.id) : ''}
-              </div>
-            </div>
-          `}
-        ></lit-virtualizer>
+      <track-list
+        .items=${this.getTrackListItems(tracks)}
+        show-artwork
+        show-album
+        .actionRenderer=${this.renderTrackAction}
+        @track-click=${this.handleTrackListClick}
+      ></track-list>
+    `;
+  }
+
+  private getTrackListItems(tracks: TrackEntry[]): TrackListItem[] {
+    return tracks.map(track => {
+      // Trigger lazy artwork loading as side effect
+      this.loadArtwork(track);
+      return {
+        id: track.id,
+        title: track.title,
+        subtitle: track.artist,
+        album: track.album,
+        durationMs: track.duration_ms,
+        artworkUrl: track.artwork_blob_id ? this.artworkUrls.get(track.artwork_blob_id) || undefined : undefined,
+      };
+    });
+  }
+
+  private renderTrackAction = (item: TrackListItem): TemplateResult => {
+    return html`
+      <div class="track-menu-container">
+        <button
+          class="track-action-btn"
+          @click=${(e: Event) => this.toggleTrackMenu(e, item.id)}
+          title="More options"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="2"/>
+            <circle cx="12" cy="12" r="2"/>
+            <circle cx="12" cy="19" r="2"/>
+          </svg>
+        </button>
+        ${this.trackMenuOpen === item.id ? this.renderTrackMenu(item.id) : ''}
       </div>
     `;
+  };
+
+  private handleTrackListClick(e: CustomEvent<{ item: TrackListItem; index: number }>) {
+    this.playTrack(e.detail.item.id);
   }
 
   private toggleTrackMenu(e: Event, trackId: string) {
@@ -1183,13 +992,6 @@ export class LibraryView extends LitElement {
     } catch (err) {
       console.error('Failed to delete track:', err);
     }
-  }
-
-  private formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   private playTrack(trackId: string) {

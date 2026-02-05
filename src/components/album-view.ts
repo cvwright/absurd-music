@@ -7,7 +7,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MusicSpaceService, CacheService, ImportService } from '@/services/index.js';
-import type { Album, Track } from '@/types/index.js';
+import type { Album, Track, TrackListItem } from '@/types/index.js';
+import './track-list.js';
 
 @customElement('album-view')
 export class AlbumView extends LitElement {
@@ -138,71 +139,6 @@ export class AlbumView extends LitElement {
       width: 24px;
       height: 24px;
       margin-left: 2px;
-    }
-
-    /* Track list */
-    .track-list {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .track-header {
-      display: grid;
-      grid-template-columns: 40px 1fr 60px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
-      border-bottom: 1px solid var(--color-bg-highlight);
-      color: var(--color-text-subdued);
-      font-size: var(--font-size-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    .track-item {
-      display: grid;
-      grid-template-columns: 40px 1fr 60px;
-      gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
-      align-items: center;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: background-color var(--transition-fast);
-    }
-
-    .track-item:hover {
-      background-color: var(--color-bg-highlight);
-    }
-
-    .track-number {
-      color: var(--color-text-subdued);
-      text-align: center;
-    }
-
-    .track-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      overflow: hidden;
-    }
-
-    .track-title {
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-artist {
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .track-duration {
-      color: var(--color-text-subdued);
-      text-align: right;
     }
 
     .loading, .error {
@@ -561,31 +497,25 @@ export class AlbumView extends LitElement {
         </button>
       </div>
 
-      <div class="track-list">
-        <div class="track-header">
-          <span>#</span>
-          <span>Title</span>
-          <span>Duration</span>
-        </div>
-        ${this.tracks.map((track, index) => html`
-          <div class="track-item" @click=${() => this.playTrack(track.track_id, index)}>
-            <span class="track-number">${track.track_number ?? index + 1}</span>
-            <div class="track-info">
-              <span class="track-title">${track.title}</span>
-              <span class="track-artist">${track.artist_name}</span>
-            </div>
-            <span class="track-duration">${this.formatDuration(track.duration_ms)}</span>
-          </div>
-        `)}
-      </div>
+      <track-list
+        .items=${this.getTrackListItems()}
+        @track-click=${this.handleTrackListClick}
+      ></track-list>
     `;
   }
 
-  private formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  private getTrackListItems(): TrackListItem[] {
+    return this.tracks.map((track, index) => ({
+      id: track.track_id,
+      title: track.title,
+      subtitle: track.artist_name,
+      durationMs: track.duration_ms,
+      displayNumber: track.track_number ?? index + 1,
+    }));
+  }
+
+  private handleTrackListClick(e: CustomEvent<{ item: TrackListItem; index: number }>) {
+    this.playTrack(e.detail.item.id, e.detail.index);
   }
 
   private formatTotalDuration(ms: number): string {
