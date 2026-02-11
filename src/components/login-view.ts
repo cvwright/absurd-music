@@ -199,6 +199,9 @@ export class LoginView extends LitElement {
       const publicKeyBytes = await getPublicKeyAsync(privateKeyBytes);
       const symmetricRootBytes = this.decodeKey(this.symmetricRoot);
 
+      // Request persistent storage so IndexedDB isn't evicted
+      navigator.storage.persist();
+
       const config: MusicSpaceConfig = {
         spaceId: this.spaceId.trim(),
         keyPair: { privateKey: privateKeyBytes, publicKey: publicKeyBytes },

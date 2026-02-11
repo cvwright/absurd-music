@@ -5,7 +5,8 @@
  * providing music-specific operations for library management.
  */
 
-import { Space, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64 } from 'reeeductio';
+import { Space, IndexedDBMessageStore, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64 } from 'reeeductio';
+
 import type { MessageQuery, MessagesResponse, MessageCreated } from 'reeeductio';
 import type { Track, Album, Artist, SearchIndex, Playlist, PlaylistIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
@@ -35,6 +36,7 @@ export class MusicSpaceService {
       symmetricRoot: config.symmetricRoot,
       baseUrl: config.baseUrl ?? 'http://localhost:8000',
       fetch: fetch.bind(window),
+      localStore: new IndexedDBMessageStore("music"),
     });
 
     this.crypto = new CryptoService(config.symmetricRoot);
