@@ -173,6 +173,41 @@ class ImportServiceImpl {
   }
 
   /**
+   * Check if a track already exists in the library with the same content.
+   *
+   * Matches on normalized artist, title, and album, with duration within 5s.
+   * Returns matches (which may differ in file format, bitrate, etc.)
+   * or an empty array if no duplicates found.
+   *
+   * @param metadata - Parsed metadata from parseFile()
+   * @param space - Authenticated MusicSpaceService instance
+   * @returns Matching search index entries, empty if no duplicates
+   */
+  async checkForDuplicates(
+    metadata: ParsedTrackMetadata,
+    space: MusicSpaceService
+  ): Promise<SearchIndex['tracks']> {
+    const artist = (metadata.artist ?? 'Unknown Artist').trim().toLowerCase();
+    const title = metadata.title.trim().toLowerCase();
+    const album = (metadata.album ?? 'Unknown Album').trim().toLowerCase();
+    const durationMs = metadata.durationMs ?? 0;
+
+    let index: SearchIndex;
+    try {
+      index = await space.getSearchIndex();
+    } catch {
+      return [];
+    }
+
+    return index.tracks.filter(t =>
+      t.artist.trim().toLowerCase() === artist &&
+      t.title.trim().toLowerCase() === title &&
+      t.album.trim().toLowerCase() === album &&
+      Math.abs(t.duration_ms - durationMs) < 5000
+    );
+  }
+
+  /**
    * Import a parsed track into the music space.
    *
    * This method:
