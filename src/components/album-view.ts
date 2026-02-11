@@ -332,6 +332,7 @@ export class AlbumView extends LitElement {
           title: matchedTitle,
           artist_id: artistId,
           artist_name: matchedArtist,
+          genres: [],
           track_ids: albumTracks.map(t => t.id),
         };
       }

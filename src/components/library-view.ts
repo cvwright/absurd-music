@@ -22,7 +22,7 @@ interface TrackEntry {
   artist: string;
   album: string;
   duration_ms: number;
-  genre?: string;
+  genres: string[];
   artwork_blob_id?: string;
   artwork_blob_key?: string;
   artwork_mime_type?: string;
@@ -438,7 +438,7 @@ export class LibraryView extends LitElement {
               artist: t.artist,
               album: t.album,
               duration_ms: t.duration_ms,
-              genre: fullTrack.genre,
+              genres: fullTrack.genres,
               artwork_blob_id: fullTrack.artwork_blob_id,
               artwork_blob_key: fullTrack.artwork_encryption?.key,
               artwork_mime_type: fullTrack.artwork_mime_type,
@@ -451,6 +451,7 @@ export class LibraryView extends LitElement {
               artist: t.artist,
               album: t.album,
               duration_ms: t.duration_ms,
+              genres: [],
             };
           }
         })
@@ -486,6 +487,7 @@ export class LibraryView extends LitElement {
               title: val.title,
               artist_id: artistId,
               artist_name: val.artist,
+              genres: [],
               track_ids: [],
             };
           }
@@ -635,7 +637,7 @@ export class LibraryView extends LitElement {
   private get availableGenres(): string[] {
     const genres = new Set<string>();
     for (const track of this.tracks) {
-      if (track.genre) genres.add(track.genre);
+      for (const g of track.genres) genres.add(g);
     }
     return [...genres].sort((a, b) => a.localeCompare(b));
   }
@@ -664,7 +666,7 @@ export class LibraryView extends LitElement {
 
     // Filter by genre
     if (this.genreFilter) {
-      filtered = filtered.filter(t => t.genre === this.genreFilter);
+      filtered = filtered.filter(t => t.genres.includes(this.genreFilter));
     }
 
     // Filter by text
@@ -703,11 +705,11 @@ export class LibraryView extends LitElement {
   private getFilteredAndSortedAlbums(): Album[] {
     let filtered = this.albums;
 
-    // Filter by genre: include album if any of its tracks match
+    // Filter by genres: include album if any of its tracks match
     if (this.genreFilter) {
       const albumKeysWithGenre = new Set(
         this.tracks
-          .filter(t => t.genre === this.genreFilter)
+          .filter(t => t.genres.includes(this.genreFilter))
           .map(t => `${t.artist}|${t.album}`)
       );
       filtered = filtered.filter(a => albumKeysWithGenre.has(a.album_id));
@@ -745,11 +747,11 @@ export class LibraryView extends LitElement {
   private getFilteredAndSortedArtists(): Artist[] {
     let filtered = this.artists;
 
-    // Filter by genre: include artist if any of their tracks match
+    // Filter by genres: include artist if any of their tracks match
     if (this.genreFilter) {
       const artistsWithGenre = new Set(
         this.tracks
-          .filter(t => t.genre === this.genreFilter)
+          .filter(t => t.genres.includes(this.genreFilter))
           .map(t => t.artist)
       );
       filtered = filtered.filter(a => artistsWithGenre.has(a.name));

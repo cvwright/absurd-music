@@ -57,8 +57,8 @@ export interface Track {
   track_number?: number;
   /** Disc number for multi-disc albums */
   disc_number?: number;
-  /** Genre tag */
-  genre?: string;
+  /** Genre tags */
+  genres: string[];
 
   // File info
   /** Audio format: mp3, m4a, flac, opus, etc. */
@@ -109,8 +109,8 @@ export interface Album {
   /** Total number of tracks */
   total_tracks?: number;
 
-  /** Primary genre */
-  genre?: string;
+  /** Genre tags */
+  genres: string[];
 
   /** Track IDs in album order */
   track_ids: string[];
@@ -180,8 +180,8 @@ export interface ParsedTrackMetadata {
   /** Total discs (if available) */
   discTotal?: number;
 
-  /** Genre tag */
-  genre?: string;
+  /** Genre tags */
+  genres: string[];
 
   /** Duration in milliseconds */
   durationMs?: number;
