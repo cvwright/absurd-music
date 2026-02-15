@@ -37,8 +37,13 @@ export class CacheService {
     this.preferences = { ...DEFAULT_PREFERENCES, ...preferences };
   }
 
+  private static readonly REQUIRED_STORES = [TRACKS_STORE, ARTWORK_STORE, METADATA_STORE];
+
   /**
    * Initialize the IndexedDB database.
+   *
+   * If the database is missing required stores (e.g. from a partial upgrade),
+   * it is deleted and recreated from scratch.
    */
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -48,37 +53,96 @@ export class CacheService {
         reject(new Error(`Failed to open cache database: ${request.error?.message}`));
       };
 
+      request.onblocked = () => {
+        console.warn('[cache] DB upgrade blocked by another connection — waiting');
+      };
+
       request.onsuccess = () => {
-        this.db = request.result;
+        const db = request.result;
+
+        // Handle version-change events from other tabs/contexts
+        db.onversionchange = () => {
+          db.close();
+          this.db = null;
+        };
+
+        // Verify all required stores exist — handles corrupt DB state
+        const missing = CacheService.REQUIRED_STORES.filter(
+          (s) => !db.objectStoreNames.contains(s)
+        );
+        if (missing.length > 0) {
+          console.warn('[cache] DB missing stores:', missing, '— deleting and recreating');
+          db.close();
+          const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+          deleteReq.onsuccess = () => {
+            this.openFreshDb().then(resolve).catch(reject);
+          };
+          deleteReq.onerror = () => {
+            reject(new Error('Failed to delete corrupt cache database'));
+          };
+          return;
+        }
+
+        this.db = db;
         this.calculateCurrentSize().then(resolve).catch(reject);
       };
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-
-        // Create tracks store with indices
-        if (!db.objectStoreNames.contains(TRACKS_STORE)) {
-          const store = db.createObjectStore(TRACKS_STORE, { keyPath: 'trackId' });
-          store.createIndex('cachedAt', 'cachedAt', { unique: false });
-          store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-          store.createIndex('size', 'size', { unique: false });
-        }
-
-        // Create artwork store with indices
-        if (!db.objectStoreNames.contains(ARTWORK_STORE)) {
-          const store = db.createObjectStore(ARTWORK_STORE, { keyPath: 'blobId' });
-          store.createIndex('cachedAt', 'cachedAt', { unique: false });
-          store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-        }
-
-        // Create metadata store for offline library data
-        if (!db.objectStoreNames.contains(METADATA_STORE)) {
-          const store = db.createObjectStore(METADATA_STORE, { keyPath: 'path' });
-          store.createIndex('cachedAt', 'cachedAt', { unique: false });
-          store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-        }
+        this.createStores(db);
       };
     });
+  }
+
+  /**
+   * Open a fresh database (after deletion). Only called from init().
+   */
+  private async openFreshDb(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onerror = () => {
+        reject(new Error(`Failed to open cache database: ${request.error?.message}`));
+      };
+
+      request.onsuccess = () => {
+        this.db = request.result;
+        this.db.onversionchange = () => {
+          this.db?.close();
+          this.db = null;
+        };
+        this.calculateCurrentSize().then(resolve).catch(reject);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        this.createStores(db);
+      };
+    });
+  }
+
+  /**
+   * Create all required object stores if they don't exist.
+   */
+  private createStores(db: IDBDatabase): void {
+    if (!db.objectStoreNames.contains(TRACKS_STORE)) {
+      const store = db.createObjectStore(TRACKS_STORE, { keyPath: 'trackId' });
+      store.createIndex('cachedAt', 'cachedAt', { unique: false });
+      store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+      store.createIndex('size', 'size', { unique: false });
+    }
+
+    if (!db.objectStoreNames.contains(ARTWORK_STORE)) {
+      const store = db.createObjectStore(ARTWORK_STORE, { keyPath: 'blobId' });
+      store.createIndex('cachedAt', 'cachedAt', { unique: false });
+      store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+    }
+
+    if (!db.objectStoreNames.contains(METADATA_STORE)) {
+      const store = db.createObjectStore(METADATA_STORE, { keyPath: 'path' });
+      store.createIndex('cachedAt', 'cachedAt', { unique: false });
+      store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+    }
   }
 
   private ensureDb(): IDBDatabase {

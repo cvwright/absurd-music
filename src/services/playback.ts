@@ -170,10 +170,27 @@ export class PlaybackService {
     let artwork: MediaImage[] = [];
     if (track.artwork_blob_id && track.artwork_encryption && this.space) {
       try {
-        const artworkData = await this.space.downloadArtworkBlob(
-          track.artwork_blob_id,
-          track.artwork_encryption.key
-        );
+        // Check artwork cache first
+        let artworkData: ArrayBuffer | undefined;
+        const mimeType = track.artwork_mime_type ?? 'image/jpeg';
+
+        if (this.cache) {
+          const cached = await this.cache.getArtwork(track.artwork_blob_id);
+          if (cached) {
+            artworkData = cached.imageData;
+          }
+        }
+
+        if (!artworkData) {
+          artworkData = await this.space.downloadArtworkBlob(
+            track.artwork_blob_id,
+            track.artwork_encryption.key
+          );
+          // Cache for next time
+          if (this.cache && artworkData) {
+            this.cache.cacheArtwork(track.artwork_blob_id, artworkData, mimeType).catch(() => {});
+          }
+        }
 
         // Ignore if a newer track started loading
         if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
@@ -184,7 +201,6 @@ export class PlaybackService {
           this.mediaSessionArtworkUrl = null;
         }
 
-        const mimeType = track.artwork_mime_type ?? 'image/jpeg';
         const blob = new Blob([artworkData], { type: mimeType });
         this.mediaSessionArtworkUrl = URL.createObjectURL(blob);
         artwork = [
@@ -193,7 +209,7 @@ export class PlaybackService {
       } catch (e) {
         // Ignore errors for stale requests
         if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
-        console.error('Failed to load artwork for Media Session:', e);
+        // Artwork failure is non-fatal — media session still works without it
       }
     } else {
       // No artwork - clean up previous if this is still the current track
@@ -392,19 +408,35 @@ export class PlaybackService {
   async next(): Promise<void> {
     if (!this.space) return;
 
-    const nextIndex = this.getNextIndex();
-    if (nextIndex === null) {
-      // End of queue
-      this.pause();
-      return;
+    const startIndex = this.queue.current_index;
+    let attempts = 0;
+    const maxAttempts = this.queue.track_ids.length;
+
+    while (attempts < maxAttempts) {
+      const nextIndex = this.getNextIndex();
+      if (nextIndex === null) {
+        this.pause();
+        return;
+      }
+
+      this.queue.current_index = nextIndex;
+      this.queue.updated_at = Date.now();
+
+      try {
+        const trackId = this.queue.track_ids[nextIndex];
+        const track = await this.space.getTrack(trackId);
+        await this.playTrack(track);
+        return;
+      } catch {
+        // Track unavailable (offline, missing) — skip to next
+        attempts++;
+        if (nextIndex === startIndex) break; // looped back around
+      }
     }
 
-    this.queue.current_index = nextIndex;
-    this.queue.updated_at = Date.now();
-
-    const trackId = this.queue.track_ids[nextIndex];
-    const track = await this.space.getTrack(trackId);
-    await this.playTrack(track);
+    // No playable track found
+    this.pause();
+    this.emit({ type: 'error', error: new Error('No playable tracks available') });
   }
 
   /**
@@ -419,18 +451,34 @@ export class PlaybackService {
       return;
     }
 
-    const prevIndex = this.getPreviousIndex();
-    if (prevIndex === null) {
-      this.seek(0);
-      return;
+    const startIndex = this.queue.current_index;
+    let attempts = 0;
+    const maxAttempts = this.queue.track_ids.length;
+
+    while (attempts < maxAttempts) {
+      const prevIndex = this.getPreviousIndex();
+      if (prevIndex === null) {
+        this.seek(0);
+        return;
+      }
+
+      this.queue.current_index = prevIndex;
+      this.queue.updated_at = Date.now();
+
+      try {
+        const trackId = this.queue.track_ids[prevIndex];
+        const track = await this.space.getTrack(trackId);
+        await this.playTrack(track);
+        return;
+      } catch {
+        // Track unavailable — skip to previous
+        attempts++;
+        if (prevIndex === startIndex) break;
+      }
     }
 
-    this.queue.current_index = prevIndex;
-    this.queue.updated_at = Date.now();
-
-    const trackId = this.queue.track_ids[prevIndex];
-    const track = await this.space.getTrack(trackId);
-    await this.playTrack(track);
+    // No playable track found going backwards
+    this.seek(0);
   }
 
   /**
@@ -486,7 +534,11 @@ export class PlaybackService {
   }
 
   private async handleTrackEnded(): Promise<void> {
-    await this.next();
+    try {
+      await this.next();
+    } catch (e) {
+      console.error('Failed to advance queue:', e);
+    }
   }
 
   private async prefetchNextTrack(): Promise<void> {
