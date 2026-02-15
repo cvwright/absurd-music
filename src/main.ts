@@ -12,5 +12,9 @@ import './styles/global.css';
 // Import components
 import './components/music-app.js';
 
+// Register service worker for offline support
+import { registerSW } from 'virtual:pwa-register';
+registerSW({ immediate: true });
+
 // Log startup
 console.log('Music Player starting...');

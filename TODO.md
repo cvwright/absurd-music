@@ -3,7 +3,7 @@
 3. ~~Wire up PlaybackService - Connect player-bar to the service~~
 4. ~~Library view component - Show actual tracks, albums, and artists~~
 5. ~~Album/Artist views - Detail pages with track listings~~
-6. Real authentication flow - Connect to wallet space, get music space credentials
+6. Real authentication flow - Connect to login space, get music space credentials
 7. Artist view - Photo, description, etc
 8. ~~Playlist support - Create, Add music, Edit, View, Play~~
 9. Search interface
@@ -32,7 +32,7 @@
 ## Performance
 27. ~~Virtual scrolling - For large libraries (thousands of tracks)~~
 28. Lazy image loading - Load artwork on scroll
-29. Service worker - Offline support and faster repeat visits
+29. ~~Service worker - Offline support and faster repeat visits~~
 
 ## Accessibility
 30. Keyboard navigation - Tab through controls, focus management
