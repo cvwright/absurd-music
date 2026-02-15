@@ -205,6 +205,7 @@ export class MusicApp extends LitElement {
   private async initServices() {
     if (!this.musicSpace) return;
     await this.cacheService.init();
+    this.musicSpace.setCache(this.cacheService);
     this.playbackService.init(this.musicSpace, this.cacheService);
     this.playlistService = new PlaylistService(this.musicSpace);
     await this.loadPlaylists();

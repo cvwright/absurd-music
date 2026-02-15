@@ -10,6 +10,7 @@ import { Space, IndexedDBMessageStore, type KeyPair, bytesToString, stringToByte
 import type { MessageQuery, MessagesResponse, MessageCreated } from 'reeeductio';
 import type { Track, Album, Artist, SearchIndex, Playlist, PlaylistIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
+import type { CacheService } from './cache.js';
 
 export interface MusicSpaceConfig {
   spaceId: string;
@@ -27,6 +28,7 @@ export interface MusicSpaceConfig {
 export class MusicSpaceService {
   private space: Space;
   private crypto: CryptoService;
+  private cache: CacheService | null = null;
   private _authenticated = false;
 
   constructor(config: MusicSpaceConfig) {
@@ -50,6 +52,25 @@ export class MusicSpaceService {
     this._authenticated = true;
   }
 
+  /**
+   * Set the cache service for offline metadata support.
+   */
+  setCache(cache: CacheService): void {
+    this.cache = cache;
+  }
+
+  /** Best-effort cache write — never throws. */
+  private cacheWrite(key: string, value: unknown): void {
+    if (!this.cache) return;
+    this.cache.setMetadata(key, JSON.stringify(value)).catch(() => {});
+  }
+
+  /** Best-effort cache remove — never throws. */
+  private cacheRemove(key: string): void {
+    if (!this.cache) return;
+    this.cache.removeMetadata(key).catch(() => {});
+  }
+
   get isAuthenticated(): boolean {
     return this._authenticated;
   }
@@ -66,24 +87,46 @@ export class MusicSpaceService {
    * Get the search index for fast client-side filtering.
    */
   async getSearchIndex(): Promise<SearchIndex> {
-    const data = await this.space.getEncryptedData('library/index');
-    return JSON.parse(bytesToString(data)) as SearchIndex;
+    const key = 'library/index';
+    try {
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) return JSON.parse(cached) as SearchIndex;
+      }
+    } catch { /* cache miss is fine */ }
+    const data = await this.space.getEncryptedData(key);
+    const result = JSON.parse(bytesToString(data)) as SearchIndex;
+    this.cacheWrite(key, result);
+    return result;
   }
 
   /**
    * Update the search index.
    */
   async setSearchIndex(index: SearchIndex): Promise<void> {
-    await this.space.setEncryptedData('library/index', stringToBytes(JSON.stringify(index)));
+    const json = JSON.stringify(index);
+    await this.space.setEncryptedData('library/index', stringToBytes(json));
+    this.cacheWrite('library/index', index);
   }
 
   /**
    * Get track metadata by ID.
    */
   async getTrack(trackId: string): Promise<Track> {
-    const data = await this.space.getEncryptedData(`library/tracks/${trackId}`);
+    const key = `library/tracks/${trackId}`;
+    try {
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) {
+          const track = JSON.parse(cached) as Track | null;
+          if (track) return track;
+        }
+      }
+    } catch { /* cache miss is fine */ }
+    const data = await this.space.getEncryptedData(key);
     const track = JSON.parse(bytesToString(data)) as Track | null;
     if (!track) throw new Error(`Track not found: ${trackId}`);
+    this.cacheWrite(key, track);
     return track;
   }
 
@@ -91,19 +134,32 @@ export class MusicSpaceService {
    * Save track metadata.
    */
   async setTrack(track: Track): Promise<void> {
+    const json = JSON.stringify(track);
     await this.space.setEncryptedData(
       `library/tracks/${track.track_id}`,
-      stringToBytes(JSON.stringify(track))
+      stringToBytes(json)
     );
+    this.cacheWrite(`library/tracks/${track.track_id}`, track);
   }
 
   /**
    * Get album metadata by ID.
    */
   async getAlbum(albumId: string): Promise<Album> {
-    const data = await this.space.getEncryptedData(`library/albums/${albumId}`);
+    const key = `library/albums/${albumId}`;
+    try {
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) {
+          const album = JSON.parse(cached) as Album | null;
+          if (album) return album;
+        }
+      }
+    } catch { /* cache miss is fine */ }
+    const data = await this.space.getEncryptedData(key);
     const album = JSON.parse(bytesToString(data)) as Album | null;
     if (!album) throw new Error(`Album not found: ${albumId}`);
+    this.cacheWrite(key, album);
     return album;
   }
 
@@ -111,19 +167,32 @@ export class MusicSpaceService {
    * Save album metadata.
    */
   async setAlbum(album: Album): Promise<void> {
+    const json = JSON.stringify(album);
     await this.space.setEncryptedData(
       `library/albums/${album.album_id}`,
-      stringToBytes(JSON.stringify(album))
+      stringToBytes(json)
     );
+    this.cacheWrite(`library/albums/${album.album_id}`, album);
   }
 
   /**
    * Get artist metadata by ID.
    */
   async getArtist(artistId: string): Promise<Artist> {
-    const data = await this.space.getEncryptedData(`library/artists/${artistId}`);
+    const key = `library/artists/${artistId}`;
+    try {
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) {
+          const artist = JSON.parse(cached) as Artist | null;
+          if (artist) return artist;
+        }
+      }
+    } catch { /* cache miss is fine */ }
+    const data = await this.space.getEncryptedData(key);
     const artist = JSON.parse(bytesToString(data)) as Artist | null;
     if (!artist) throw new Error(`Artist not found: ${artistId}`);
+    this.cacheWrite(key, artist);
     return artist;
   }
 
@@ -131,10 +200,12 @@ export class MusicSpaceService {
    * Save artist metadata.
    */
   async setArtist(artist: Artist): Promise<void> {
+    const json = JSON.stringify(artist);
     await this.space.setEncryptedData(
       `library/artists/${artist.artist_id}`,
-      stringToBytes(JSON.stringify(artist))
+      stringToBytes(json)
     );
+    this.cacheWrite(`library/artists/${artist.artist_id}`, artist);
   }
 
   // ============================================================
@@ -234,9 +305,18 @@ export class MusicSpaceService {
    * Get the playlist index (list of all playlists).
    */
   async getPlaylistIndex(): Promise<PlaylistIndex> {
+    const key = `user/${this.userId}/playlist_index`;
     try {
-      const data = await this.space.getEncryptedData(`user/${this.userId}/playlist_index`);
-      return JSON.parse(bytesToString(data)) as PlaylistIndex;
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) return JSON.parse(cached) as PlaylistIndex;
+      }
+    } catch { /* cache miss is fine */ }
+    try {
+      const data = await this.space.getEncryptedData(key);
+      const result = JSON.parse(bytesToString(data)) as PlaylistIndex;
+      this.cacheWrite(key, result);
+      return result;
     } catch {
       return { playlists: [], updated_at: Date.now() };
     }
@@ -246,19 +326,32 @@ export class MusicSpaceService {
    * Update the playlist index.
    */
   async setPlaylistIndex(index: PlaylistIndex): Promise<void> {
+    const json = JSON.stringify(index);
     await this.space.setEncryptedData(
       `user/${this.userId}/playlist_index`,
-      stringToBytes(JSON.stringify(index))
+      stringToBytes(json)
     );
+    this.cacheWrite(`user/${this.userId}/playlist_index`, index);
   }
 
   /**
    * Get a playlist by ID.
    */
   async getPlaylist(playlistId: string): Promise<Playlist> {
-    const data = await this.space.getEncryptedData(`user/${this.userId}/playlists/${playlistId}`);
+    const key = `user/${this.userId}/playlists/${playlistId}`;
+    try {
+      if (this.cache) {
+        const cached = await this.cache.getMetadata(key);
+        if (cached) {
+          const playlist = JSON.parse(cached) as Playlist | null;
+          if (playlist) return playlist;
+        }
+      }
+    } catch { /* cache miss is fine */ }
+    const data = await this.space.getEncryptedData(key);
     const playlist = JSON.parse(bytesToString(data)) as Playlist | null;
     if (!playlist) throw new Error(`Playlist not found: ${playlistId}`);
+    this.cacheWrite(key, playlist);
     return playlist;
   }
 
@@ -266,10 +359,12 @@ export class MusicSpaceService {
    * Save a playlist.
    */
   async setPlaylist(playlist: Playlist): Promise<void> {
+    const json = JSON.stringify(playlist);
     await this.space.setEncryptedData(
       `user/${this.userId}/playlists/${playlist.playlist_id}`,
-      stringToBytes(JSON.stringify(playlist))
+      stringToBytes(json)
     );
+    this.cacheWrite(`user/${this.userId}/playlists/${playlist.playlist_id}`, playlist);
   }
 
   /**
@@ -280,6 +375,7 @@ export class MusicSpaceService {
       `user/${this.userId}/playlists/${playlistId}`,
       stringToBytes('null')
     );
+    this.cacheRemove(`user/${this.userId}/playlists/${playlistId}`);
   }
 
   // ============================================================
@@ -353,6 +449,7 @@ export class MusicSpaceService {
       `library/tracks/${trackId}`,
       stringToBytes('null')
     );
+    this.cacheRemove(`library/tracks/${trackId}`);
   }
 
   /**
@@ -405,6 +502,7 @@ export class MusicSpaceService {
       `library/albums/${albumId}`,
       stringToBytes('null')
     );
+    this.cacheRemove(`library/albums/${albumId}`);
 
     return deletedTrackIds;
   }

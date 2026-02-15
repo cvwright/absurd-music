@@ -5,12 +5,13 @@
  * Provides LRU eviction when cache size limit is reached.
  */
 
-import type { CachedTrack, CachedArtwork, CachePreferences } from '@/types/index.js';
+import type { CachedTrack, CachedArtwork, CachedMetadata, CachePreferences } from '@/types/index.js';
 
 const DB_NAME = 'music-player-cache';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const TRACKS_STORE = 'tracks';
 const ARTWORK_STORE = 'artwork';
+const METADATA_STORE = 'metadata';
 
 const DEFAULT_PREFERENCES: CachePreferences = {
   max_size_bytes: 2 * 1024 * 1024 * 1024, // 2GB
@@ -66,6 +67,13 @@ export class CacheService {
         // Create artwork store with indices
         if (!db.objectStoreNames.contains(ARTWORK_STORE)) {
           const store = db.createObjectStore(ARTWORK_STORE, { keyPath: 'blobId' });
+          store.createIndex('cachedAt', 'cachedAt', { unique: false });
+          store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+        }
+
+        // Create metadata store for offline library data
+        if (!db.objectStoreNames.contains(METADATA_STORE)) {
+          const store = db.createObjectStore(METADATA_STORE, { keyPath: 'path' });
           store.createIndex('cachedAt', 'cachedAt', { unique: false });
           store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
         }
@@ -407,6 +415,91 @@ export class CacheService {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(ARTWORK_STORE, 'readwrite');
       const store = tx.objectStore(ARTWORK_STORE);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ============================================================
+  // Metadata Caching
+  // ============================================================
+
+  /**
+   * Get cached metadata by storage path.
+   */
+  async getMetadata(path: string): Promise<string | null> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(METADATA_STORE, 'readwrite');
+      const store = tx.objectStore(METADATA_STORE);
+      const request = store.get(path);
+
+      request.onsuccess = () => {
+        const entry = request.result as CachedMetadata | undefined;
+        if (entry) {
+          entry.lastAccessed = Date.now();
+          store.put(entry);
+          resolve(entry.data);
+        } else {
+          resolve(null);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Cache metadata at a storage path.
+   */
+  async setMetadata(path: string, data: string): Promise<void> {
+    const db = this.ensureDb();
+
+    const entry: CachedMetadata = {
+      path,
+      data,
+      cachedAt: Date.now(),
+      lastAccessed: Date.now(),
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(METADATA_STORE, 'readwrite');
+      const store = tx.objectStore(METADATA_STORE);
+      const request = store.put(entry);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Remove cached metadata at a storage path.
+   */
+  async removeMetadata(path: string): Promise<void> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(METADATA_STORE, 'readwrite');
+      const store = tx.objectStore(METADATA_STORE);
+      const request = store.delete(path);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Clear all cached metadata.
+   */
+  async clearMetadata(): Promise<void> {
+    const db = this.ensureDb();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(METADATA_STORE, 'readwrite');
+      const store = tx.objectStore(METADATA_STORE);
       const request = store.clear();
 
       request.onsuccess = () => resolve();

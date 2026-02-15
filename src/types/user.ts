@@ -96,6 +96,21 @@ export interface CachePreferences {
 }
 
 /**
+ * Cached metadata entry for IndexedDB.
+ * Generic key-value store keyed by the server storage path.
+ */
+export interface CachedMetadata {
+  /** Storage path (e.g. "library/index", "library/tracks/abc123") */
+  path: string;
+  /** JSON-serialized data */
+  data: string;
+  /** When cached (Unix timestamp) */
+  cachedAt: number;
+  /** When last accessed (for LRU eviction) */
+  lastAccessed: number;
+}
+
+/**
  * Cached track metadata for IndexedDB
  */
 export interface CachedTrack {
