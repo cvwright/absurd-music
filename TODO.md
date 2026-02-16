@@ -42,7 +42,7 @@
 ## Mobile
 33. ~~Responsive layout - Mobile-friendly sidebar and main content~~
 34. Touch gestures - Swipe for next/prev, long press for context menu
-35. PWA manifest - Install to home screen
+35. ~~PWA manifest - Install to home screen~~
 
 ## Integrations
 36. Last.fm scrobbling - Track listening history
