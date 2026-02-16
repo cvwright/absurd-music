@@ -36,6 +36,9 @@ export class CacheService {
   /** In-memory set of cached track IDs for synchronous lookup by views. */
   readonly cachedTrackIds = new Set<string>();
 
+  /** Track IDs currently being downloaded. Managed by the download helper. */
+  readonly downloadingTrackIds = new Set<string>();
+
   constructor(preferences?: Partial<CachePreferences>) {
     this.preferences = { ...DEFAULT_PREFERENCES, ...preferences };
   }

@@ -13,6 +13,7 @@ import type { CacheService } from './cache.js';
  *
  * Fetches the track metadata, downloads and decrypts the audio blob,
  * caches it in IndexedDB, and optionally caches the artwork.
+ * Tracks download progress via `cacheService.downloadingTrackIds`.
  */
 export async function downloadTrackForOffline(
   musicSpace: MusicSpaceService,
@@ -20,35 +21,42 @@ export async function downloadTrackForOffline(
   trackId: string
 ): Promise<void> {
   if (cacheService.cachedTrackIds.has(trackId)) return;
+  if (cacheService.downloadingTrackIds.has(trackId)) return;
 
-  const track = await musicSpace.getTrack(trackId);
+  cacheService.downloadingTrackIds.add(trackId);
 
-  const audioData = await musicSpace.downloadAudioBlob(
-    track.audio_blob_id,
-    track.encryption.key
-  );
+  try {
+    const track = await musicSpace.getTrack(trackId);
 
-  await cacheService.cacheTrack(trackId, audioData, {
-    title: track.title,
-    artist_name: track.artist_name,
-    album_name: track.album_name,
-    duration_ms: track.duration_ms,
-    file_format: track.file_format,
-  });
+    const audioData = await musicSpace.downloadAudioBlob(
+      track.audio_blob_id,
+      track.encryption.key
+    );
 
-  // Cache artwork if present
-  if (track.artwork_blob_id && track.artwork_encryption?.key) {
-    const hasArtwork = await cacheService.hasArtwork(track.artwork_blob_id);
-    if (!hasArtwork) {
-      const artworkData = await musicSpace.downloadArtworkBlob(
-        track.artwork_blob_id,
-        track.artwork_encryption.key
-      );
-      await cacheService.cacheArtwork(
-        track.artwork_blob_id,
-        artworkData,
-        track.artwork_mime_type ?? 'image/jpeg'
-      );
+    await cacheService.cacheTrack(trackId, audioData, {
+      title: track.title,
+      artist_name: track.artist_name,
+      album_name: track.album_name,
+      duration_ms: track.duration_ms,
+      file_format: track.file_format,
+    });
+
+    // Cache artwork if present
+    if (track.artwork_blob_id && track.artwork_encryption?.key) {
+      const hasArtwork = await cacheService.hasArtwork(track.artwork_blob_id);
+      if (!hasArtwork) {
+        const artworkData = await musicSpace.downloadArtworkBlob(
+          track.artwork_blob_id,
+          track.artwork_encryption.key
+        );
+        await cacheService.cacheArtwork(
+          track.artwork_blob_id,
+          artworkData,
+          track.artwork_mime_type ?? 'image/jpeg'
+        );
+      }
     }
+  } finally {
+    cacheService.downloadingTrackIds.delete(trackId);
   }
 }

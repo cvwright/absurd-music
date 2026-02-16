@@ -816,6 +816,7 @@ export class LibraryView extends LitElement {
       <track-list
         .items=${this.getTrackListItems(tracks)}
         .downloadedIds=${this.cacheService?.cachedTrackIds ?? new Set()}
+        .downloadingIds=${this.cacheService?.downloadingTrackIds ?? new Set()}
         show-artwork
         show-album
         .actionRenderer=${this.renderTrackAction}
@@ -884,6 +885,14 @@ export class LibraryView extends LitElement {
               </svg>
               Downloaded
             </button>`
+          : this.cacheService?.downloadingTrackIds.has(trackId)
+          ? html`
+            <button class="track-menu-item" disabled style="opacity: 0.5; cursor: default;">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+              </svg>
+              Downloading...
+            </button>`
           : html`
             <button class="track-menu-item" @click=${(e: Event) => this.handleDownloadTrack(e, trackId)} ?disabled=${this.offline}>
               <svg viewBox="0 0 24 24" fill="currentColor">
@@ -934,10 +943,13 @@ export class LibraryView extends LitElement {
     if (!this.musicSpace || !this.cacheService) return;
 
     try {
-      await downloadTrackForOffline(this.musicSpace, this.cacheService, trackId);
+      const promise = downloadTrackForOffline(this.musicSpace, this.cacheService, trackId);
+      this.requestUpdate();
+      await promise;
       this.requestUpdate();
     } catch (err) {
       console.error('Failed to download track:', err);
+      this.requestUpdate();
     }
   }
 

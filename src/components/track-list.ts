@@ -97,6 +97,19 @@ export class TrackList extends LitElement {
       color: var(--color-text-subdued);
     }
 
+    .downloading-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--color-bg-highlight);
+      border-top-color: var(--color-text-subdued);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     .track-subtitle {
       font-size: var(--font-size-sm);
       color: var(--color-text-secondary);
@@ -245,6 +258,10 @@ export class TrackList extends LitElement {
   @property({ attribute: false })
   downloadedIds: Set<string> = new Set();
 
+  /** Set of track IDs currently being downloaded. Shows a spinner. */
+  @property({ attribute: false })
+  downloadingIds: Set<string> = new Set();
+
   /** Render callback for the action column. If provided, an action column is shown. */
   @property({ attribute: false })
   actionRenderer?: (item: TrackListItem, index: number) => TemplateResult;
@@ -253,7 +270,7 @@ export class TrackList extends LitElement {
   private showDownloaded = false;
 
   override willUpdate(changed: PropertyValues) {
-    const hasDownloads = this.downloadedIds.size > 0;
+    const hasDownloads = this.downloadedIds.size > 0 || this.downloadingIds.size > 0;
     if (
       changed.has('showArtwork') || changed.has('showAlbum') ||
       changed.has('actionRenderer') || hasDownloads !== this.showDownloaded
@@ -309,11 +326,13 @@ export class TrackList extends LitElement {
         ${this.showAlbum ? html`<span class="track-album">${item.album ?? ''}</span>` : nothing}
         ${this.showDownloaded ? html`
           <span class="track-downloaded">
-            ${this.downloadedIds.has(item.id) ? html`
-              <svg class="downloaded-icon" viewBox="0 0 24 24" fill="currentColor" title="Downloaded">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
-              </svg>
-            ` : nothing}
+            ${this.downloadingIds.has(item.id)
+              ? html`<div class="downloading-spinner" title="Downloading..."></div>`
+              : this.downloadedIds.has(item.id) ? html`
+                <svg class="downloaded-icon" viewBox="0 0 24 24" fill="currentColor" title="Downloaded">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
+                </svg>
+              ` : nothing}
           </span>
         ` : nothing}
         <span class="track-duration">${this.formatDuration(item.durationMs)}</span>
