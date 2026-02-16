@@ -269,6 +269,14 @@ export class AlbumView extends LitElement {
   @state()
   private uploadingArtwork = false;
 
+  @state()
+  private downloadingAll = false;
+
+  private get allTracksDownloaded(): boolean {
+    if (!this.cacheService || this.tracks.length === 0) return false;
+    return this.tracks.every(t => this.cacheService!.cachedTrackIds.has(t.track_id));
+  }
+
   override updated(changedProperties: Map<string, unknown>) {
     if ((changedProperties.has('albumId') || changedProperties.has('musicSpace')) && this.albumId && this.musicSpace) {
       this.loadAlbum();
@@ -475,6 +483,30 @@ export class AlbumView extends LitElement {
               </button>
               ${this.menuOpen ? html`
                 <div class="menu-dropdown">
+                  ${this.allTracksDownloaded
+                    ? html`
+                      <button class="menu-item" disabled style="opacity: 0.5; cursor: default;">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
+                        </svg>
+                        All Downloaded
+                      </button>`
+                    : this.downloadingAll
+                    ? html`
+                      <button class="menu-item" disabled style="opacity: 0.5; cursor: default;">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                        </svg>
+                        Downloading...
+                      </button>`
+                    : html`
+                      <button class="menu-item" @click=${this.handleDownloadAll} ?disabled=${this.offline}>
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                        </svg>
+                        Download All
+                      </button>`}
+                  <div class="menu-divider"></div>
                   <button
                     class="menu-item"
                     @click=${this.downloadArtwork}
@@ -589,6 +621,26 @@ export class AlbumView extends LitElement {
             </button>`}
       </div>
     `;
+  }
+
+  private async handleDownloadAll() {
+    this.menuOpen = false;
+    if (!this.musicSpace || !this.cacheService) return;
+
+    this.downloadingAll = true;
+    this.requestUpdate();
+
+    try {
+      for (const track of this.tracks) {
+        await downloadTrackForOffline(this.musicSpace, this.cacheService, track.track_id);
+        this.requestUpdate();
+      }
+    } catch (err) {
+      console.error('Failed to download all tracks:', err);
+    } finally {
+      this.downloadingAll = false;
+      this.requestUpdate();
+    }
   }
 
   private async handleDownloadTrack(e: Event, trackId: string) {
