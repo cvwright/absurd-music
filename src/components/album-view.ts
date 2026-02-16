@@ -234,6 +234,9 @@ export class AlbumView extends LitElement {
   @property({ attribute: false })
   musicSpace: MusicSpaceService | null = null;
 
+  @property({ type: Boolean })
+  offline = false;
+
   @property({ attribute: false })
   cacheService: CacheService | null = null;
 
@@ -459,7 +462,7 @@ export class AlbumView extends LitElement {
                   <button
                     class="menu-item"
                     @click=${this.downloadArtwork}
-                    ?disabled=${this.fetchingArtwork || !!this.artworkUrl}
+                    ?disabled=${this.fetchingArtwork || !!this.artworkUrl || this.offline}
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
@@ -469,7 +472,7 @@ export class AlbumView extends LitElement {
                   <button
                     class="menu-item"
                     @click=${this.uploadArtwork}
-                    ?disabled=${this.uploadingArtwork}
+                    ?disabled=${this.uploadingArtwork || this.offline}
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
@@ -477,7 +480,7 @@ export class AlbumView extends LitElement {
                     ${this.uploadingArtwork ? 'Uploading...' : 'Upload artwork'}
                   </button>
                   <div class="menu-divider"></div>
-                  <button class="menu-item danger" @click=${this.handleDeleteAlbum}>
+                  <button class="menu-item danger" @click=${this.handleDeleteAlbum} ?disabled=${this.offline}>
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                     </svg>
@@ -611,7 +614,7 @@ export class AlbumView extends LitElement {
   }
 
   private async handleDeleteAlbum() {
-    if (!this.album || !this.musicSpace) return;
+    if (!this.album || !this.musicSpace || this.offline) return;
 
     this.menuOpen = false;
     const trackCount = this.tracks.length;

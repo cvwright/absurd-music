@@ -307,6 +307,9 @@ export class PlaylistView extends LitElement {
   @property({ attribute: false })
   cacheService: CacheService | null = null;
 
+  @property({ type: Boolean })
+  offline = false;
+
   @property({ attribute: false })
   playlistService: PlaylistService | null = null;
 
@@ -539,7 +542,7 @@ export class PlaylistView extends LitElement {
                             </button>
                           `
                         : html`
-                            <button class="menu-item" @click=${this.startEdit}>
+                            <button class="menu-item" @click=${this.startEdit} ?disabled=${this.offline}>
                               <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path
                                   d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
@@ -547,7 +550,7 @@ export class PlaylistView extends LitElement {
                               </svg>
                               Edit details
                             </button>
-                            <button class="menu-item danger" @click=${this.deletePlaylist}>
+                            <button class="menu-item danger" @click=${this.deletePlaylist} ?disabled=${this.offline}>
                               <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path
                                   d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
@@ -698,7 +701,7 @@ export class PlaylistView extends LitElement {
   }
 
   private async removeTrack(trackId: string) {
-    if (!this.playlistService || !this.playlist) return;
+    if (!this.playlistService || !this.playlist || this.offline) return;
 
     try {
       this.playlist = await this.playlistService.removeTrack(this.playlist.playlist_id, trackId);
@@ -749,7 +752,7 @@ export class PlaylistView extends LitElement {
   }
 
   private async saveEdit() {
-    if (!this.playlistService || !this.playlist || !this.editName.trim()) return;
+    if (!this.playlistService || !this.playlist || !this.editName.trim() || this.offline) return;
 
     try {
       this.playlist = await this.playlistService.updatePlaylist(this.playlist.playlist_id, {
@@ -772,7 +775,7 @@ export class PlaylistView extends LitElement {
   }
 
   private async deletePlaylist() {
-    if (!this.playlistService || !this.playlist) return;
+    if (!this.playlistService || !this.playlist || this.offline) return;
 
     if (!confirm(`Delete "${this.playlist.name}"?`)) return;
 

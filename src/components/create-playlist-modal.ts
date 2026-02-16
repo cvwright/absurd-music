@@ -129,6 +129,9 @@ export class CreatePlaylistModal extends LitElement {
   @property({ type: Boolean })
   open = false;
 
+  @property({ type: Boolean })
+  offline = false;
+
   @state()
   private name = '';
 
@@ -174,7 +177,7 @@ export class CreatePlaylistModal extends LitElement {
             </button>
             <button
               class="btn btn-primary"
-              ?disabled=${!this.name.trim()}
+              ?disabled=${!this.name.trim() || this.offline}
               @click=${this.handleCreate}
             >
               Create

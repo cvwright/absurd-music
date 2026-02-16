@@ -291,6 +291,12 @@ export class LibraryView extends LitElement {
       color: var(--color-text-subdued);
     }
 
+    .offline-badge {
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      color: var(--color-warning);
+    }
+
     /* Drop zone */
     :host {
       position: relative;
@@ -332,6 +338,9 @@ export class LibraryView extends LitElement {
 
   @property({ type: String })
   initialTab: Tab = 'songs';
+
+  @property({ type: Boolean })
+  offline = false;
 
   @property({ attribute: false })
   playlists: PlaylistIndexEntry[] = [];
@@ -517,11 +526,14 @@ export class LibraryView extends LitElement {
       <div class="header">
         <div class="header-row">
           <h1>Your Library</h1>
-          ${!this.isEmpty ? html`
-            <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
-              ${this.importing ? 'Importing...' : 'Import'}
-            </button>
-          ` : ''}
+          ${!this.isEmpty ? this.offline
+            ? html`<span class="offline-badge">Offline</span>`
+            : html`
+              <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
+                ${this.importing ? 'Importing...' : 'Import'}
+              </button>
+            `
+          : ''}
         </div>
       </div>
 
@@ -559,7 +571,7 @@ export class LibraryView extends LitElement {
           Import your music collection to get started. We support MP3, AAC, FLAC, and more.
           All files are encrypted before upload.
         </p>
-        <button class="import-btn" @click=${this.openImport} ?disabled=${this.importing}>
+        <button class="import-btn" @click=${this.openImport} ?disabled=${this.importing || this.offline}>
           ${this.importing ? 'Importing...' : 'Import Music'}
         </button>
       </div>
@@ -913,6 +925,7 @@ export class LibraryView extends LitElement {
   private async handleDeleteTrack(e: Event, trackId: string) {
     e.stopPropagation();
     this.trackMenuOpen = null;
+    if (this.offline) return;
 
     const track = this.tracks.find(t => t.id === trackId);
     const title = track?.title ?? 'this track';
@@ -1189,6 +1202,7 @@ export class LibraryView extends LitElement {
     e.preventDefault();
     this.dragCounter = 0;
     this.draggingOver = false;
+    if (this.offline) return;
 
     const items = e.dataTransfer?.items;
     if (!items || items.length === 0) return;

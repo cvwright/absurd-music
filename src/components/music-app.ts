@@ -166,10 +166,24 @@ export class MusicApp extends LitElement {
   @state()
   private urlSpaceId: string | null = null;
 
+  @state()
+  private offline = !navigator.onLine;
+
+  private handleOnline = () => { this.offline = false; };
+  private handleOffline = () => { this.offline = true; };
+
   override connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('online', this.handleOnline);
+    window.addEventListener('offline', this.handleOffline);
     this.urlSpaceId = this.getSpaceIdFromUrl();
     this.tryAutoLogin();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('offline', this.handleOffline);
   }
 
   private getSpaceIdFromUrl(): string | null {
@@ -260,6 +274,7 @@ export class MusicApp extends LitElement {
           .currentView=${this.currentView}
           .currentPlaylistId=${this.viewParams.id || ''}
           .playlists=${this.playlists}
+          ?offline=${this.offline}
           @navigate=${this.handleNavigate}
           @open-create-playlist=${this.handleOpenCreatePlaylist}
         ></app-sidebar>
@@ -331,6 +346,7 @@ export class MusicApp extends LitElement {
 
       <create-playlist-modal
         ?open=${this.showCreatePlaylistModal}
+        ?offline=${this.offline}
         @close=${this.handleCloseCreatePlaylist}
         @create=${this.handleCreatePlaylist}
       ></create-playlist-modal>
@@ -345,12 +361,14 @@ export class MusicApp extends LitElement {
           .cacheService=${this.cacheService}
           .initialTab=${this.viewParams.tab || 'songs'}
           .playlists=${this.playlists}
+          ?offline=${this.offline}
         ></library-view>`;
       case 'album':
         return html`<album-view
           .albumId=${this.viewParams.id}
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
+          ?offline=${this.offline}
         ></album-view>`;
       case 'artist':
         return html`<artist-view
@@ -364,6 +382,7 @@ export class MusicApp extends LitElement {
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
           .playlistService=${this.playlistService}
+          ?offline=${this.offline}
         ></playlist-view>`;
       case 'search':
         return html`<div>Search view</div>`;
@@ -378,6 +397,7 @@ export class MusicApp extends LitElement {
           .cacheService=${this.cacheService}
           .initialTab=${this.viewParams.tab || 'songs'}
           .playlists=${this.playlists}
+          ?offline=${this.offline}
         ></library-view>`;
     }
   }

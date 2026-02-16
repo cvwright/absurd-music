@@ -16,6 +16,7 @@ export class Sidebar extends LitElement {
       flex-direction: column;
       height: 100%;
       padding: var(--spacing-md);
+      box-sizing: border-box;
     }
 
     .logo {
@@ -151,6 +152,33 @@ export class Sidebar extends LitElement {
       font-size: var(--font-size-sm);
       font-style: italic;
     }
+
+    .create-playlist-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .create-playlist-btn:disabled:hover {
+      color: var(--color-text-subdued);
+      background-color: transparent;
+    }
+
+    .offline-indicator {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-md);
+      font-size: var(--font-size-xs);
+      color: var(--color-warning);
+    }
+
+    .offline-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--color-warning);
+      flex-shrink: 0;
+    }
   `;
 
   @property({ type: String })
@@ -158,6 +186,9 @@ export class Sidebar extends LitElement {
 
   @property({ type: String })
   currentPlaylistId = '';
+
+  @property({ type: Boolean })
+  offline = false;
 
   @property({ attribute: false })
   playlists: PlaylistIndexEntry[] = [];
@@ -233,6 +264,7 @@ export class Sidebar extends LitElement {
               class="create-playlist-btn"
               @click=${this.openCreatePlaylist}
               title="Create playlist"
+              ?disabled=${this.offline}
             >
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
@@ -253,6 +285,13 @@ export class Sidebar extends LitElement {
               )}
         </div>
       </nav>
+
+      ${this.offline ? html`
+        <div class="offline-indicator">
+          <span class="offline-dot"></span>
+          <span>Offline</span>
+        </div>
+      ` : ''}
     `;
   }
 
