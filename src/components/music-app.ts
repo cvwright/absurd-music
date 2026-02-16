@@ -169,7 +169,28 @@ export class MusicApp extends LitElement {
   @state()
   private offline = !navigator.onLine;
 
-  private handleOnline = () => { this.offline = false; };
+  private handleOnline = async () => {
+    this.offline = false;
+
+    if (!this.musicSpace) return;
+
+    // Re-authenticate if we started offline
+    if (!this.musicSpace.isAuthenticated) {
+      try {
+        await this.musicSpace.authenticate();
+      } catch {
+        // Auth still failing — will retry on next online event
+        return;
+      }
+    }
+
+    // Invalidate cached indexes so views get fresh data from server
+    this.musicSpace.invalidateIndexCache();
+
+    // Refresh sidebar playlists
+    await this.loadPlaylists();
+  };
+
   private handleOffline = () => { this.offline = true; };
 
   override connectedCallback() {
@@ -222,26 +243,11 @@ export class MusicApp extends LitElement {
         await this.initServices();
         this.authenticated = true;
         this.updateUrlForSpace(savedConfig.spaceId);
-        window.addEventListener('online', () => this.tryReconnect(), { once: true });
       } else {
         // Auth rejected by server — clear credentials
         this.musicSpace = null;
         clearCredentials();
       }
-    }
-  }
-
-  /**
-   * Attempt to re-authenticate after coming back online.
-   */
-  private async tryReconnect() {
-    if (!this.musicSpace || this.musicSpace.isAuthenticated) return;
-
-    try {
-      await this.musicSpace.authenticate();
-    } catch {
-      // Still failing — listen for next online event
-      window.addEventListener('online', () => this.tryReconnect(), { once: true });
     }
   }
 

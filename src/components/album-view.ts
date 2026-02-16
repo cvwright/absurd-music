@@ -268,6 +268,10 @@ export class AlbumView extends LitElement {
     if ((changedProperties.has('albumId') || changedProperties.has('musicSpace')) && this.albumId && this.musicSpace) {
       this.loadAlbum();
     }
+    // Reload album data when coming back online
+    if (changedProperties.has('offline') && changedProperties.get('offline') === true && !this.offline) {
+      this.loadAlbum();
+    }
   }
 
   override connectedCallback() {

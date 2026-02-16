@@ -348,6 +348,10 @@ export class PlaylistView extends LitElement {
     ) {
       this.loadPlaylist();
     }
+    // Reload playlist data when coming back online
+    if (changedProperties.has('offline') && changedProperties.get('offline') === true && !this.offline) {
+      this.loadPlaylist();
+    }
   }
 
   override connectedCallback() {

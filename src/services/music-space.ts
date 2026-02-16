@@ -79,6 +79,15 @@ export class MusicSpaceService {
     return this.space.getUserId();
   }
 
+  /**
+   * Invalidate cached index entries so they're re-fetched from the server.
+   * Call after reconnecting to ensure fresh data.
+   */
+  invalidateIndexCache(): void {
+    this.cacheRemove('library/index');
+    this.cacheRemove(`user/${this.userId}/playlist_index`);
+  }
+
   // ============================================================
   // Library Operations
   // ============================================================

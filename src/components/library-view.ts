@@ -424,6 +424,10 @@ export class LibraryView extends LitElement {
     if (changedProperties.has('trackMenuOpen')) {
       this.shadowRoot?.querySelector('track-list')?.requestUpdate();
     }
+    // Reload library data when coming back online
+    if (changedProperties.has('offline') && changedProperties.get('offline') === true && !this.offline) {
+      this.loadLibrary();
+    }
   }
 
   /** Load library data from the search index. */
