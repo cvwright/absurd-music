@@ -33,6 +33,9 @@ export class CacheService {
   private preferences: CachePreferences;
   private currentSize = 0;
 
+  /** In-memory set of cached track IDs for synchronous lookup by views. */
+  readonly cachedTrackIds = new Set<string>();
+
   constructor(preferences?: Partial<CachePreferences>) {
     this.preferences = { ...DEFAULT_PREFERENCES, ...preferences };
   }
@@ -164,11 +167,14 @@ export class CacheService {
       const request = store.openCursor();
 
       let totalSize = 0;
+      this.cachedTrackIds.clear();
 
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
-          totalSize += (cursor.value as CachedTrack).size;
+          const track = cursor.value as CachedTrack;
+          totalSize += track.size;
+          this.cachedTrackIds.add(track.trackId);
           cursor.continue();
         } else {
           this.currentSize = totalSize;
@@ -239,6 +245,7 @@ export class CacheService {
 
       request.onsuccess = () => {
         this.currentSize += size;
+        this.cachedTrackIds.add(trackId);
         resolve();
       };
 
@@ -263,6 +270,7 @@ export class CacheService {
 
       request.onsuccess = () => {
         this.currentSize -= track.size;
+        this.cachedTrackIds.delete(trackId);
         resolve();
       };
 
@@ -307,6 +315,7 @@ export class CacheService {
           const track = cursor.value as CachedTrack;
           freedSpace += track.size;
           this.currentSize -= track.size;
+          this.cachedTrackIds.delete(track.trackId);
           cursor.delete();
           cursor.continue();
         } else {
@@ -341,6 +350,7 @@ export class CacheService {
         if (cursor) {
           const track = cursor.value as CachedTrack;
           this.currentSize -= track.size;
+          this.cachedTrackIds.delete(track.trackId);
           cursor.delete();
           prunedCount++;
           cursor.continue();
@@ -366,6 +376,7 @@ export class CacheService {
 
       request.onsuccess = () => {
         this.currentSize = 0;
+        this.cachedTrackIds.clear();
         resolve();
       };
 

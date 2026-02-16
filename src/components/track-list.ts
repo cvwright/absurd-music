@@ -46,6 +46,11 @@ export class TrackList extends LitElement {
       background-color: var(--color-bg-highlight);
     }
 
+    .track-item:has(.track-menu-dropdown) {
+      position: relative;
+      z-index: 10;
+    }
+
     .track-number {
       color: var(--color-text-subdued);
       text-align: center;
@@ -78,6 +83,18 @@ export class TrackList extends LitElement {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .track-downloaded {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .downloaded-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--color-text-subdued);
     }
 
     .track-subtitle {
@@ -224,12 +241,24 @@ export class TrackList extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: 'show-album' })
   showAlbum = false;
 
+  /** Set of track IDs that are downloaded/cached. Shows a downloaded indicator. */
+  @property({ attribute: false })
+  downloadedIds: Set<string> = new Set();
+
   /** Render callback for the action column. If provided, an action column is shown. */
   @property({ attribute: false })
   actionRenderer?: (item: TrackListItem, index: number) => TemplateResult;
 
+  /** Whether to show the downloaded indicator column */
+  private showDownloaded = false;
+
   override willUpdate(changed: PropertyValues) {
-    if (changed.has('showArtwork') || changed.has('showAlbum') || changed.has('actionRenderer')) {
+    const hasDownloads = this.downloadedIds.size > 0;
+    if (
+      changed.has('showArtwork') || changed.has('showAlbum') ||
+      changed.has('actionRenderer') || hasDownloads !== this.showDownloaded
+    ) {
+      this.showDownloaded = hasDownloads;
       this.style.setProperty('--grid-columns', this.buildColumns(true));
       this.style.setProperty('--grid-columns-narrow', this.buildColumns(false));
     }
@@ -240,6 +269,7 @@ export class TrackList extends LitElement {
     if (this.showArtwork) cols.push('40px');
     cols.push('1fr'); // title/info
     if (this.showAlbum && includeAlbum) cols.push('1fr');
+    if (this.showDownloaded) cols.push('20px'); // downloaded indicator
     cols.push('60px'); // duration
     if (this.actionRenderer) cols.push('40px');
     return cols.join(' ');
@@ -252,6 +282,7 @@ export class TrackList extends LitElement {
         ${this.showArtwork ? html`<span></span>` : nothing}
         <span>Title</span>
         ${this.showAlbum ? html`<span class="header-album">Album</span>` : nothing}
+        ${this.showDownloaded ? html`<span></span>` : nothing}
         <span>Duration</span>
         ${this.actionRenderer ? html`<span></span>` : nothing}
       </div>
@@ -276,6 +307,15 @@ export class TrackList extends LitElement {
           <span class="track-subtitle">${item.subtitle}</span>
         </div>
         ${this.showAlbum ? html`<span class="track-album">${item.album ?? ''}</span>` : nothing}
+        ${this.showDownloaded ? html`
+          <span class="track-downloaded">
+            ${this.downloadedIds.has(item.id) ? html`
+              <svg class="downloaded-icon" viewBox="0 0 24 24" fill="currentColor" title="Downloaded">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
+              </svg>
+            ` : nothing}
+          </span>
+        ` : nothing}
         <span class="track-duration">${this.formatDuration(item.durationMs)}</span>
         ${this.actionRenderer
           ? html`<div class="track-action" @click=${(e: Event) => e.stopPropagation()}>

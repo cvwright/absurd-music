@@ -5,8 +5,10 @@
  */
 
 import { LitElement, html, css } from 'lit';
+import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MusicSpaceService, CacheService, ImportService } from '@/services/index.js';
+import { downloadTrackForOffline } from '@/services/download.js';
 import type { Album, Track, TrackListItem } from '@/types/index.js';
 import './track-list.js';
 
@@ -259,6 +261,9 @@ export class AlbumView extends LitElement {
   private menuOpen = false;
 
   @state()
+  private trackMenuOpen: string | null = null;
+
+  @state()
   private fetchingArtwork = false;
 
   @state()
@@ -289,11 +294,18 @@ export class AlbumView extends LitElement {
   }
 
   private handleClickOutside(e: MouseEvent) {
+    const path = e.composedPath();
     if (this.menuOpen) {
-      const path = e.composedPath();
       const menuContainer = this.shadowRoot?.querySelector('.menu-container');
       if (menuContainer && !path.includes(menuContainer)) {
         this.menuOpen = false;
+      }
+    }
+    if (this.trackMenuOpen) {
+      const trackList = this.shadowRoot?.querySelector('track-list');
+      const trackMenuContainer = trackList?.shadowRoot?.querySelector('.track-menu-container');
+      if (!trackMenuContainer || !path.includes(trackMenuContainer)) {
+        this.trackMenuOpen = null;
       }
     }
   }
@@ -507,6 +519,8 @@ export class AlbumView extends LitElement {
 
       <track-list
         .items=${this.getTrackListItems()}
+        .downloadedIds=${this.cacheService?.cachedTrackIds ?? new Set()}
+        .actionRenderer=${this.renderTrackAction}
         @track-click=${this.handleTrackListClick}
       ></track-list>
     `;
@@ -520,6 +534,65 @@ export class AlbumView extends LitElement {
       durationMs: track.duration_ms,
       displayNumber: track.track_number ?? index + 1,
     }));
+  }
+
+  private renderTrackAction = (item: TrackListItem): TemplateResult => {
+    return html`
+      <div class="track-menu-container">
+        <button
+          class="track-action-btn"
+          @click=${(e: Event) => this.toggleTrackMenu(e, item.id)}
+          title="More options"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="2"/>
+            <circle cx="12" cy="12" r="2"/>
+            <circle cx="12" cy="19" r="2"/>
+          </svg>
+        </button>
+        ${this.trackMenuOpen === item.id ? this.renderTrackMenu(item.id) : ''}
+      </div>
+    `;
+  };
+
+  private toggleTrackMenu(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = this.trackMenuOpen === trackId ? null : trackId;
+  }
+
+  private renderTrackMenu(trackId: string) {
+    return html`
+      <div class="track-menu-dropdown">
+        ${this.cacheService?.cachedTrackIds.has(trackId)
+          ? html`
+            <button class="track-menu-item" disabled style="opacity: 0.5; cursor: default;">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
+              </svg>
+              Downloaded
+            </button>`
+          : html`
+            <button class="track-menu-item" @click=${(e: Event) => this.handleDownloadTrack(e, trackId)} ?disabled=${this.offline}>
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+              </svg>
+              Download
+            </button>`}
+      </div>
+    `;
+  }
+
+  private async handleDownloadTrack(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+    if (!this.musicSpace || !this.cacheService) return;
+
+    try {
+      await downloadTrackForOffline(this.musicSpace, this.cacheService, trackId);
+      this.requestUpdate();
+    } catch (err) {
+      console.error('Failed to download track:', err);
+    }
   }
 
   private handleTrackListClick(e: CustomEvent<{ item: TrackListItem; index: number }>) {

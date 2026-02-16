@@ -8,6 +8,7 @@ import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
+import { downloadTrackForOffline } from '@/services/download.js';
 import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry, TrackListItem } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 import './track-list.js';
@@ -814,6 +815,7 @@ export class LibraryView extends LitElement {
     return html`
       <track-list
         .items=${this.getTrackListItems(tracks)}
+        .downloadedIds=${this.cacheService?.cachedTrackIds ?? new Set()}
         show-artwork
         show-album
         .actionRenderer=${this.renderTrackAction}
@@ -874,6 +876,21 @@ export class LibraryView extends LitElement {
           </svg>
           Add to Queue
         </button>
+        ${this.cacheService?.cachedTrackIds.has(trackId)
+          ? html`
+            <button class="track-menu-item" disabled style="opacity: 0.5; cursor: default;">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13l-3-3 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z"/>
+              </svg>
+              Downloaded
+            </button>`
+          : html`
+            <button class="track-menu-item" @click=${(e: Event) => this.handleDownloadTrack(e, trackId)} ?disabled=${this.offline}>
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+              </svg>
+              Download
+            </button>`}
         <div class="track-menu-divider"></div>
         <div class="track-menu-section-title">Add to Playlist</div>
         ${this.playlists.length === 0
@@ -909,6 +926,19 @@ export class LibraryView extends LitElement {
     this.trackMenuOpen = null;
     // TODO: Implement add to queue
     console.log('Add to queue:', trackId);
+  }
+
+  private async handleDownloadTrack(e: Event, trackId: string) {
+    e.stopPropagation();
+    this.trackMenuOpen = null;
+    if (!this.musicSpace || !this.cacheService) return;
+
+    try {
+      await downloadTrackForOffline(this.musicSpace, this.cacheService, trackId);
+      this.requestUpdate();
+    } catch (err) {
+      console.error('Failed to download track:', err);
+    }
   }
 
   private handleAddToPlaylist(e: Event, trackId: string, playlistId: string) {
