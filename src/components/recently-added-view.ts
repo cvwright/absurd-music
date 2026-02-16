@@ -147,6 +147,9 @@ export class RecentlyAddedView extends LitElement {
   @property({ attribute: false })
   cacheService: CacheService | null = null;
 
+  @property({ type: Boolean })
+  offline = false;
+
   @state()
   private recentAlbums: RecentAlbum[] = [];
 
@@ -172,6 +175,10 @@ export class RecentlyAddedView extends LitElement {
 
   override updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('musicSpace') && this.musicSpace) {
+      this.loadRecentlyAdded();
+    }
+    // Reload data when coming back online
+    if (changedProperties.has('offline') && changedProperties.get('offline') === true && !this.offline) {
       this.loadRecentlyAdded();
     }
   }

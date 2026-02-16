@@ -169,26 +169,32 @@ export class MusicApp extends LitElement {
   @state()
   private offline = !navigator.onLine;
 
+  @state()
+  private reconnecting = false;
+
   private handleOnline = async () => {
     this.offline = false;
 
     if (!this.musicSpace) return;
 
-    // Re-authenticate if we started offline
-    if (!this.musicSpace.isAuthenticated) {
-      try {
+    this.reconnecting = true;
+
+    try {
+      // Re-authenticate if we started offline
+      if (!this.musicSpace.isAuthenticated) {
         await this.musicSpace.authenticate();
-      } catch {
-        // Auth still failing — will retry on next online event
-        return;
       }
+
+      // Invalidate cached indexes so views get fresh data from server
+      this.musicSpace.invalidateIndexCache();
+
+      // Refresh sidebar playlists
+      await this.loadPlaylists();
+    } catch {
+      // Auth still failing — will retry on next online event
+    } finally {
+      this.reconnecting = false;
     }
-
-    // Invalidate cached indexes so views get fresh data from server
-    this.musicSpace.invalidateIndexCache();
-
-    // Refresh sidebar playlists
-    await this.loadPlaylists();
   };
 
   private handleOffline = () => { this.offline = true; };
@@ -368,6 +374,7 @@ export class MusicApp extends LitElement {
           .initialTab=${this.viewParams.tab || 'songs'}
           .playlists=${this.playlists}
           ?offline=${this.offline}
+          ?reconnecting=${this.reconnecting}
         ></library-view>`;
       case 'album':
         return html`<album-view
@@ -381,6 +388,7 @@ export class MusicApp extends LitElement {
           .artistId=${this.viewParams.id}
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
+          ?offline=${this.offline}
         ></artist-view>`;
       case 'playlist':
         return html`<playlist-view
@@ -396,6 +404,7 @@ export class MusicApp extends LitElement {
         return html`<recently-added-view
           .musicSpace=${this.musicSpace}
           .cacheService=${this.cacheService}
+          ?offline=${this.offline}
         ></recently-added-view>`;
       default:
         return html`<library-view
@@ -404,6 +413,7 @@ export class MusicApp extends LitElement {
           .initialTab=${this.viewParams.tab || 'songs'}
           .playlists=${this.playlists}
           ?offline=${this.offline}
+          ?reconnecting=${this.reconnecting}
         ></library-view>`;
     }
   }

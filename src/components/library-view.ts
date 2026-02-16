@@ -342,6 +342,9 @@ export class LibraryView extends LitElement {
   @property({ type: Boolean })
   offline = false;
 
+  @property({ type: Boolean })
+  reconnecting = false;
+
   @property({ attribute: false })
   playlists: PlaylistIndexEntry[] = [];
 
@@ -532,11 +535,13 @@ export class LibraryView extends LitElement {
           <h1>Your Library</h1>
           ${!this.isEmpty ? this.offline
             ? html`<span class="offline-badge">Offline</span>`
-            : html`
-              <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
-                ${this.importing ? 'Importing...' : 'Import'}
-              </button>
-            `
+            : this.reconnecting
+              ? html`<span class="offline-badge">Connecting...</span>`
+              : html`
+                <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
+                  ${this.importing ? 'Importing...' : 'Import'}
+                </button>
+              `
           : ''}
         </div>
       </div>

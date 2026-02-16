@@ -272,6 +272,9 @@ export class ArtistView extends LitElement {
   @property({ attribute: false })
   cacheService: CacheService | null = null;
 
+  @property({ type: Boolean })
+  offline = false;
+
   @state()
   private artist: Artist | null = null;
 
@@ -292,6 +295,10 @@ export class ArtistView extends LitElement {
 
   override updated(changedProperties: Map<string, unknown>) {
     if ((changedProperties.has('artistId') || changedProperties.has('musicSpace')) && this.artistId && this.musicSpace) {
+      this.loadArtist();
+    }
+    // Reload artist data when coming back online
+    if (changedProperties.has('offline') && changedProperties.get('offline') === true && !this.offline) {
       this.loadArtist();
     }
   }
