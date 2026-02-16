@@ -46,7 +46,7 @@
 
 ## Integrations
 36. Last.fm scrobbling - Track listening history
-37. Lyrics display - Fetch or parse embedded lyrics
+37. ~~Lyrics display - Fetch or parse embedded lyrics~~ x
 38. MusicBrainz enrichment - Better metadata than iTunes alone
 
 ## Real-world Readiness
