@@ -33,6 +33,11 @@ import './create-playlist-modal.js';
 
 type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent';
 
+/** Distinguish network failures from server-side auth rejections. */
+function isNetworkError(err: unknown): boolean {
+  return err instanceof TypeError && /fetch|network/i.test(err.message);
+}
+
 @customElement('music-app')
 export class MusicApp extends LitElement {
   static styles = css`
@@ -188,17 +193,41 @@ export class MusicApp extends LitElement {
 
   private async tryAutoLogin() {
     const savedConfig = await loadCredentials();
-    if (savedConfig) {
-      try {
-        this.musicSpace = new MusicSpaceService(savedConfig);
-        await this.musicSpace.authenticate();
+    if (!savedConfig) return;
+
+    this.musicSpace = new MusicSpaceService(savedConfig);
+
+    try {
+      await this.musicSpace.authenticate();
+      await this.initServices();
+      this.authenticated = true;
+      this.updateUrlForSpace(savedConfig.spaceId);
+    } catch (err) {
+      if (isNetworkError(err)) {
+        // Network unavailable — start in offline/cached mode
         await this.initServices();
         this.authenticated = true;
         this.updateUrlForSpace(savedConfig.spaceId);
-      } catch {
-        // Saved credentials failed, clear them and show login
+        window.addEventListener('online', () => this.tryReconnect(), { once: true });
+      } else {
+        // Auth rejected by server — clear credentials
+        this.musicSpace = null;
         clearCredentials();
       }
+    }
+  }
+
+  /**
+   * Attempt to re-authenticate after coming back online.
+   */
+  private async tryReconnect() {
+    if (!this.musicSpace || this.musicSpace.isAuthenticated) return;
+
+    try {
+      await this.musicSpace.authenticate();
+    } catch {
+      // Still failing — listen for next online event
+      window.addEventListener('online', () => this.tryReconnect(), { once: true });
     }
   }
 
