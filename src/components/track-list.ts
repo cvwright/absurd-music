@@ -21,7 +21,7 @@ export class TrackList extends LitElement {
       display: grid;
       grid-template-columns: var(--grid-columns);
       gap: var(--spacing-sm);
-      padding: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-xs) var(--spacing-sm) var(--spacing-xs);
       border-bottom: 1px solid var(--color-bg-highlight);
       color: var(--color-text-subdued);
       font-size: var(--font-size-xs);
@@ -33,7 +33,7 @@ export class TrackList extends LitElement {
       display: grid;
       grid-template-columns: var(--grid-columns);
       gap: var(--spacing-sm);
-      padding: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-xs) var(--spacing-sm) var(--spacing-xs);
       align-items: center;
       border-radius: var(--radius-sm);
       cursor: pointer;
@@ -88,7 +88,7 @@ export class TrackList extends LitElement {
     .track-downloaded {
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-end;
     }
 
     .downloaded-icon {
@@ -282,25 +282,25 @@ export class TrackList extends LitElement {
   }
 
   private buildColumns(includeAlbum: boolean): string {
-    const cols: string[] = ['40px']; // track number
+    const cols: string[] = ['28px']; // track number
     if (this.showArtwork) cols.push('40px');
     cols.push('1fr'); // title/info
     if (this.showAlbum && includeAlbum) cols.push('1fr');
-    if (this.showDownloaded) cols.push('20px'); // downloaded indicator
-    cols.push('60px'); // duration
-    if (this.actionRenderer) cols.push('40px');
+    if (this.showDownloaded) cols.push('14px'); // downloaded indicator
+    cols.push('44px'); // duration
+    if (this.actionRenderer) cols.push('32px');
     return cols.join(' ');
   }
 
   render() {
     return html`
       <div class="track-header">
-        <span>#</span>
+        <span class="track-number">#</span>
         ${this.showArtwork ? html`<span></span>` : nothing}
         <span>Title</span>
         ${this.showAlbum ? html`<span class="header-album">Album</span>` : nothing}
         ${this.showDownloaded ? html`<span></span>` : nothing}
-        <span>Duration</span>
+        <span class="track-duration">Time</span>
         ${this.actionRenderer ? html`<span></span>` : nothing}
       </div>
       <lit-virtualizer

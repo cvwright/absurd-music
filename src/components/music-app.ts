@@ -211,6 +211,7 @@ export class MusicApp extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
+    this.musicSpace?.disconnectWebSocket();
   }
 
   private getSpaceIdFromUrl(): string | null {
@@ -264,6 +265,9 @@ export class MusicApp extends LitElement {
     this.playbackService.init(this.musicSpace, this.cacheService);
     this.playlistService = new PlaylistService(this.musicSpace);
     await this.loadPlaylists();
+    this.musicSpace.connectWebSocket().catch((err) => {
+      console.warn('WebSocket initial connection failed:', err);
+    });
   }
 
   private async loadPlaylists() {

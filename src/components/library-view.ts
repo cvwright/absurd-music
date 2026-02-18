@@ -1370,6 +1370,7 @@ export class LibraryView extends LitElement {
         }
       }
 
+      this.importing = false;
       await this.loadLibrary();
     } catch (err) {
       console.error('Import failed:', err);
