@@ -545,11 +545,94 @@ export class MusicSpaceService {
   // WebSocket
   // ============================================================
 
+  private ws: WebSocket | null = null;
+  private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private wsReconnectDelay = 1000;
+  private static readonly WS_MAX_RECONNECT_DELAY = 30000;
+
   /**
    * Get WebSocket connection URL for real-time updates.
    */
   async getWebSocketUrl(): Promise<string> {
     return this.space.getWebSocketConnectionUrl();
+  }
+
+  /**
+   * Connect to the WebSocket stream and keep the local message store in sync.
+   *
+   * Automatically reconnects with exponential backoff on disconnection.
+   * Call {@link disconnectWebSocket} to stop.
+   */
+  async connectWebSocket(): Promise<void> {
+    if (this.ws) return;
+
+    const url = await this.getWebSocketUrl();
+    const ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      console.log('[music-space] WebSocket connected');
+      this.wsReconnectDelay = 1000;
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        // The stream may send the Message directly or wrapped in { message: ... }
+        const message = data.message ?? data;
+        if (!message.message_hash) {
+          // Not a message event (e.g. heartbeat) — ignore
+          return;
+        }
+        await this.space.handleIncomingMessage(message);
+      } catch (err) {
+        console.warn('[music-space] Failed to handle WebSocket message:', err);
+      }
+    };
+
+    ws.onclose = (event) => {
+      console.log('[music-space] WebSocket closed:', event.code, event.reason);
+      this.ws = null;
+      this.scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      // onclose will fire after onerror, which handles reconnection
+    };
+
+    this.ws = ws;
+  }
+
+  /**
+   * Disconnect the WebSocket stream and stop reconnection attempts.
+   */
+  disconnectWebSocket(): void {
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.wsReconnectTimer) return;
+
+    this.wsReconnectTimer = setTimeout(async () => {
+      this.wsReconnectTimer = null;
+      try {
+        await this.connectWebSocket();
+      } catch (err) {
+        console.warn('[music-space] WebSocket reconnect failed:', err);
+        this.wsReconnectDelay = Math.min(
+          this.wsReconnectDelay * 2,
+          MusicSpaceService.WS_MAX_RECONNECT_DELAY
+        );
+        this.scheduleReconnect();
+      }
+    }, this.wsReconnectDelay);
   }
 
   // ============================================================
