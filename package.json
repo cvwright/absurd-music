@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "firebase:login": "firebase login",
+    "firebase:use": "firebase use --add",
+    "deploy": "npm run build && firebase deploy",
+    "deploy:hosting": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "@lit-labs/virtualizer": "^2.1.1",
@@ -17,6 +21,7 @@
     "reeeductio": "file:../../reeeductio/typescript-sdk"
   },
   "devDependencies": {
+    "firebase-tools": "^15.6.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^1.2.0"

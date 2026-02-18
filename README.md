@@ -30,9 +30,10 @@ cp .firebaserc.example .firebaserc
 3. Authenticate and deploy:
 
 ```bash
-npx firebase-tools login
+npm run firebase:login
+npm run firebase:use
 npm run build
-npx firebase-tools deploy
+npm run deploy:hosting
 ```
 
 Notes:
