@@ -197,6 +197,7 @@ export class LibraryView extends LitElement {
     /* Sort and filter controls */
     .controls-row {
       display: flex;
+      flex-wrap: wrap;
       gap: var(--spacing-md);
       align-items: center;
       margin-bottom: var(--spacing-lg);
@@ -284,6 +285,17 @@ export class LibraryView extends LitElement {
 
     .sort-direction-btn.desc svg {
       transform: rotate(180deg);
+    }
+
+    @media (max-width: 480px) {
+      .filter-input {
+        flex-basis: 100%;
+        max-width: 100%;
+      }
+
+      .sort-controls {
+        margin-left: 0;
+      }
     }
 
     .no-results {
