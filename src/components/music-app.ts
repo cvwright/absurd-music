@@ -13,6 +13,7 @@ import { MusicSpaceService, type MusicSpaceConfig } from '@/services/music-space
 import { PlaybackService } from '@/services/playback.js';
 import { CacheService } from '@/services/cache.js';
 import { PlaylistService } from '@/services/playlist.js';
+import { PlayCountService } from '@/services/play-count.js';
 import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
 import type { PlaylistIndexEntry } from '@/types/index.js';
 
@@ -151,6 +152,7 @@ export class MusicApp extends LitElement {
   private playbackService = new PlaybackService();
   private cacheService = new CacheService();
   private playlistService: PlaylistService | null = null;
+  private playCountService: PlayCountService | null = null;
 
   @state()
   private currentView: View = 'library';
@@ -213,6 +215,7 @@ export class MusicApp extends LitElement {
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
     this.musicSpace?.disconnectWebSocket();
+    this.playCountService?.destroy();
   }
 
   private getSpaceIdFromUrl(): string | null {
@@ -265,6 +268,8 @@ export class MusicApp extends LitElement {
     this.musicSpace.setCache(this.cacheService);
     this.playbackService.init(this.musicSpace, this.cacheService);
     this.playlistService = new PlaylistService(this.musicSpace);
+    this.playCountService?.destroy();
+    this.playCountService = new PlayCountService(this.playbackService, this.musicSpace);
     await this.loadPlaylists();
     this.musicSpace.connectWebSocket().catch((err) => {
       console.warn('WebSocket initial connection failed:', err);

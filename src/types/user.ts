@@ -151,3 +151,25 @@ export interface CachedArtwork {
   /** Size in bytes */
   size: number;
 }
+
+/**
+ * Per-track play count data stored at user/{user_id}/play_counts/{track_id}.
+ *
+ * Uses a three-tier rolling window with automatic compaction on each write:
+ *   - daily:   last 7 calendar days    (keys: "YYYY-MM-DD")
+ *   - monthly: last 12 calendar months (keys: "YYYY-MM")
+ *   - yearly:  all years, never evicted (keys: "YYYY")
+ *
+ * Stale daily entries are rolled into monthly on write; stale monthly entries
+ * are rolled into yearly. The all-time total is the sum of all three tiers.
+ */
+export interface TrackPlayCount {
+  /** Play counts keyed by ISO date string "YYYY-MM-DD" (last 7 days only) */
+  daily: Record<string, number>;
+  /** Play counts keyed by year-month string "YYYY-MM" (last 12 months only) */
+  monthly: Record<string, number>;
+  /** Play counts keyed by year string "YYYY" (all years) */
+  yearly: Record<string, number>;
+  /** Unix timestamp of last write */
+  updated_at: number;
+}

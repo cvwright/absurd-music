@@ -10,4 +10,5 @@ export { CacheService } from './cache.js';
 export { PlaybackService } from './playback.js';
 export { ImportService } from './import.js';
 export { PlaylistService } from './playlist.js';
+export { PlayCountService } from './play-count.js';
 export * from './credentials.js';
