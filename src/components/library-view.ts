@@ -27,13 +27,17 @@ interface TrackEntry {
   artwork_blob_id?: string;
   artwork_blob_key?: string;
   artwork_mime_type?: string;
+  file_format?: string;
 }
 
 @customElement('library-view')
 export class LibraryView extends LitElement {
   static styles = css`
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
       padding: var(--spacing-lg) var(--spacing-md);
     }
 
@@ -77,6 +81,11 @@ export class LibraryView extends LitElement {
 
     .content {
       margin-top: var(--spacing-lg);
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
     }
 
     /* Empty state */
@@ -128,9 +137,9 @@ export class LibraryView extends LitElement {
     }
 
     track-list {
-      min-height: 200px;
-      max-height: calc(100vh - 300px);
-      overflow: auto;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
     }
 
     /* Album grid */
@@ -288,6 +297,27 @@ export class LibraryView extends LitElement {
     }
 
     @media (max-width: 480px) {
+      :host {
+        padding-top: var(--spacing-sm);
+      }
+
+      .header {
+        margin-bottom: 0;
+      }
+
+      .header-row {
+        margin-bottom: 0;
+      }
+
+      .content {
+        margin-top: var(--spacing-sm);
+      }
+
+      .controls-row {
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-sm);
+      }
+
       .filter-input {
         flex-basis: 100%;
         max-width: 100%;
@@ -308,6 +338,49 @@ export class LibraryView extends LitElement {
       font-size: var(--font-size-sm);
       font-weight: 500;
       color: var(--color-warning);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .header-refresh-btn {
+      padding: var(--spacing-xs);
+      background-color: transparent;
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-text-subdued);
+      border-radius: var(--radius-full);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .header-refresh-btn:hover:not(:disabled) {
+      background-color: var(--color-bg-highlight);
+      color: var(--color-text-primary);
+    }
+
+    .header-refresh-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .header-refresh-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .header-refresh-btn.spinning svg {
+      animation: spin 1s linear infinite;
     }
 
     /* Drop zone */
@@ -395,6 +468,9 @@ export class LibraryView extends LitElement {
   private genreFilter = '';
 
   @state()
+  private refreshing = false;
+
+  @state()
   private draggingOver = false;
 
   private dragCounter = 0;
@@ -446,6 +522,18 @@ export class LibraryView extends LitElement {
     }
   }
 
+  /** Bypass the cache and reload the library directly from the server. */
+  private async refreshLibrary() {
+    if (!this.musicSpace || this.refreshing) return;
+    this.refreshing = true;
+    try {
+      this.musicSpace.invalidateIndexCache();
+      await this.loadLibrary();
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
   /** Load library data from the search index. */
   private async loadLibrary() {
     if (!this.musicSpace) {
@@ -471,6 +559,7 @@ export class LibraryView extends LitElement {
               artwork_blob_id: fullTrack.artwork_blob_id,
               artwork_blob_key: fullTrack.artwork_encryption?.key,
               artwork_mime_type: fullTrack.artwork_mime_type,
+              file_format: fullTrack.file_format,
             };
           } catch {
             // Fall back to index data if track fetch fails
@@ -551,9 +640,21 @@ export class LibraryView extends LitElement {
             : this.reconnecting
               ? html`<span class="offline-badge">Connecting...</span>`
               : html`
-                <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
-                  ${this.importing ? 'Importing...' : 'Import'}
-                </button>
+                <div class="header-actions">
+                  <button
+                    class="header-refresh-btn ${this.refreshing ? 'spinning' : ''}"
+                    @click=${this.refreshLibrary}
+                    ?disabled=${this.refreshing}
+                    title="Refresh library"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    </svg>
+                  </button>
+                  <button class="header-import-btn" @click=${this.openImport} ?disabled=${this.importing}>
+                    ${this.importing ? 'Importing...' : 'Import'}
+                  </button>
+                </div>
               `
           : ''}
         </div>
@@ -880,9 +981,28 @@ export class LibraryView extends LitElement {
     this.trackMenuOpen = this.trackMenuOpen === trackId ? null : trackId;
   }
 
+  private audioMimeType(format: string): string {
+    const base = format.split('/')[0].trim().toLowerCase();
+    switch (base) {
+      case 'm4a': case 'mp42': case 'isom': case 'iso2': case 'aac': return 'audio/mp4';
+      case 'mp3': return 'audio/mpeg';
+      case 'ogg': return 'audio/ogg';
+      case 'opus': return 'audio/ogg; codecs=opus';
+      case 'flac': return 'audio/flac';
+      case 'wav': return 'audio/wav';
+      default: return `audio/${base}`;
+    }
+  }
+
   private renderTrackMenu(trackId: string) {
+    const track = this.tracks.find(t => t.id === trackId);
+    const mimeType = track?.file_format ? this.audioMimeType(track.file_format) : undefined;
     return html`
       <div class="track-menu-dropdown">
+        ${mimeType ? html`
+          <div class="track-menu-section-title" title="Audio MIME type (debug)">MIME: ${mimeType}</div>
+          <div class="track-menu-divider"></div>
+        ` : ''}
         <button class="track-menu-item" @click=${(e: Event) => this.handleAddToQueue(e, trackId)}>
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>

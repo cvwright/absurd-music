@@ -46,6 +46,7 @@ export class MusicApp extends LitElement {
       grid-template-columns: var(--sidebar-width) 1fr;
       grid-template-rows: 1fr var(--player-height);
       height: 100vh;
+      height: 100dvh;
       width: 100vw;
       background-color: var(--color-bg-primary);
     }
