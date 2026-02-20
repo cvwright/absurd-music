@@ -108,7 +108,7 @@ export class LoginView extends LitElement {
   @property({ type: Boolean }) spaceIdFromUrl = false;
   @state() private privateKey = '';
   @state() private symmetricRoot = '';
-  @state() private serverUrl = '';
+  @state() private serverUrl = import.meta.env.VITE_DEFAULT_SERVER_URL ?? '';
   @state() private error = '';
   @state() private connecting = false;
 
