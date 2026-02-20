@@ -161,12 +161,16 @@ class ImportServiceImpl {
   private normalizeFormat(container?: string, filename?: string): string {
     if (container) {
       const lower = container.toLowerCase();
-      if (lower === 'mpeg' || lower === 'mp3') return 'mp3';
-      if (lower === 'mp4' || lower === 'm4a') return 'm4a';
-      if (lower === 'flac') return 'flac';
-      if (lower === 'ogg') return 'ogg';
-      if (lower === 'wave' || lower === 'wav') return 'wav';
-      return lower;
+      // Strip any trailing ftyp brand info (e.g. "m4a/mp42/isom" → "m4a")
+      const base = lower.split('/')[0].trim();
+      if (base === 'mpeg' || base === 'mp3') return 'mp3';
+      // MP4 ftyp brands: mp4, m4a, mp42, isom, iso2, M4A  etc. all mean M4A/AAC
+      if (base === 'mp4' || base === 'm4a' || base === 'mp42' ||
+          base === 'isom' || base === 'iso2' || base === 'm4a ') return 'm4a';
+      if (base === 'flac') return 'flac';
+      if (base === 'ogg') return 'ogg';
+      if (base === 'wave' || base === 'wav') return 'wav';
+      return base;
     }
     // Fall back to file extension
     return filename?.split('.').pop()?.toLowerCase() ?? 'unknown';

@@ -9,6 +9,32 @@ import type { Track, QueueState, PlaybackState, RepeatMode } from '@/types/index
 import type { MusicSpaceService } from './music-space.js';
 import type { CacheService } from './cache.js';
 
+/** Map file format extensions to valid MIME types. Mobile Safari is strict about these. */
+function audioMimeType(format: string): string {
+  // Stored file_format may include ftyp brand info (e.g. "m4a/mp42/isom"); use only the base.
+  const base = format.split('/')[0].trim().toLowerCase();
+  switch (base) {
+    case 'm4a':
+    case 'mp42':
+    case 'isom':
+    case 'iso2':
+    case 'aac':
+      return 'audio/mp4';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'opus':
+      return 'audio/ogg; codecs=opus';
+    case 'flac':
+      return 'audio/flac';
+    case 'wav':
+      return 'audio/wav';
+    default:
+      return `audio/${base}`;
+  }
+}
+
 export type PlaybackEvent =
   | { type: 'play' }
   | { type: 'pause' }
@@ -305,7 +331,7 @@ export class PlaybackService {
       }
 
       // Create blob URL and play
-      const blob = new Blob([audioData], { type: `audio/${track.file_format}` });
+      const blob = new Blob([audioData], { type: audioMimeType(track.file_format) });
       this.currentBlobUrl = URL.createObjectURL(blob);
       this.currentTrack = track;
 

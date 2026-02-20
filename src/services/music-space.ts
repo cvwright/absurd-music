@@ -30,13 +30,15 @@ export class MusicSpaceService {
   private crypto: CryptoService;
   private cache: CacheService | null = null;
   private _authenticated = false;
+  private readonly spaceId: string;
 
   constructor(config: MusicSpaceConfig) {
+    this.spaceId = config.spaceId;
     this.space = new Space({
       spaceId: config.spaceId,
       keyPair: config.keyPair,
       symmetricRoot: config.symmetricRoot,
-      baseUrl: config.baseUrl ?? 'http://localhost:8000',
+      baseUrl: config.baseUrl ?? import.meta.env.VITE_DEFAULT_SERVER_URL ?? 'http://localhost:8000',
       fetch: fetch.bind(window),
       localStore: new IndexedDBMessageStore("music"),
     });
@@ -59,16 +61,21 @@ export class MusicSpaceService {
     this.cache = cache;
   }
 
+  /** Namespace a cache key under the current space to prevent cross-space pollution. */
+  private cacheKey(path: string): string {
+    return `${this.spaceId}/${path}`;
+  }
+
   /** Best-effort cache write — never throws. */
   private cacheWrite(key: string, value: unknown): void {
     if (!this.cache) return;
-    this.cache.setMetadata(key, JSON.stringify(value)).catch(() => {});
+    this.cache.setMetadata(this.cacheKey(key), JSON.stringify(value)).catch(() => {});
   }
 
   /** Best-effort cache remove — never throws. */
   private cacheRemove(key: string): void {
     if (!this.cache) return;
-    this.cache.removeMetadata(key).catch(() => {});
+    this.cache.removeMetadata(this.cacheKey(key)).catch(() => {});
   }
 
   get isAuthenticated(): boolean {
@@ -99,7 +106,7 @@ export class MusicSpaceService {
     const key = 'library/index';
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) return JSON.parse(cached) as SearchIndex;
       }
     } catch { /* cache miss is fine */ }
@@ -125,7 +132,7 @@ export class MusicSpaceService {
     const key = `library/tracks/${trackId}`;
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) {
           const track = JSON.parse(cached) as Track | null;
           if (track) return track;
@@ -158,7 +165,7 @@ export class MusicSpaceService {
     const key = `library/albums/${albumId}`;
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) {
           const album = JSON.parse(cached) as Album | null;
           if (album) return album;
@@ -191,7 +198,7 @@ export class MusicSpaceService {
     const key = `library/artists/${artistId}`;
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) {
           const artist = JSON.parse(cached) as Artist | null;
           if (artist) return artist;
@@ -317,7 +324,7 @@ export class MusicSpaceService {
     const key = `user/${this.userId}/playlist_index`;
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) return JSON.parse(cached) as PlaylistIndex;
       }
     } catch { /* cache miss is fine */ }
@@ -350,7 +357,7 @@ export class MusicSpaceService {
     const key = `user/${this.userId}/playlists/${playlistId}`;
     try {
       if (this.cache) {
-        const cached = await this.cache.getMetadata(key);
+        const cached = await this.cache.getMetadata(this.cacheKey(key));
         if (cached) {
           const playlist = JSON.parse(cached) as Playlist | null;
           if (playlist) return playlist;
