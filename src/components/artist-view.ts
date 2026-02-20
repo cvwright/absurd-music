@@ -145,9 +145,9 @@ export class ArtistView extends LitElement {
 
     .track-item {
       display: grid;
-      grid-template-columns: 40px 40px 1fr 100px;
+      grid-template-columns: 40px 1fr 100px;
       gap: var(--spacing-md);
-      padding: var(--spacing-sm) var(--spacing-md);
+      padding: var(--spacing-sm) var(--spacing-xs);
       align-items: center;
       border-radius: var(--radius-sm);
       cursor: pointer;
@@ -156,11 +156,6 @@ export class ArtistView extends LitElement {
 
     .track-item:hover {
       background-color: var(--color-bg-highlight);
-    }
-
-    .track-number {
-      color: var(--color-text-subdued);
-      text-align: center;
     }
 
     .track-artwork {
@@ -503,9 +498,8 @@ export class ArtistView extends LitElement {
         <div class="section">
           <h2 class="section-title">Popular</h2>
           <div class="track-list">
-            ${this.topTracks.map((track, index) => html`
+            ${this.topTracks.map((track) => html`
               <div class="track-item" @click=${() => this.playTrack(track.track_id)}>
-                <span class="track-number">${index + 1}</span>
                 <div class="track-artwork">
                   ${this.artworkUrls.get(track.album_id)
                     ? html`<img src=${this.artworkUrls.get(track.album_id)!} alt="" />`
