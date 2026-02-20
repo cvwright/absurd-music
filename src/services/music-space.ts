@@ -5,9 +5,9 @@
  * providing music-specific operations for library management.
  */
 
-import { Space, IndexedDBMessageStore, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64 } from 'reeeductio';
+import { Space, IndexedDBMessageStore, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, decodeBase64, extractFromTypedId } from 'reeeductio';
 
-import type { MessageQuery, MessagesResponse, MessageCreated } from 'reeeductio';
+import type { MessageQuery, MessagesResponse, MessageCreated, Capability } from 'reeeductio';
 import type { Track, Album, Artist, SearchIndex, Playlist, PlaylistIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
 import type { CacheService } from './cache.js';
@@ -48,10 +48,77 @@ export class MusicSpaceService {
 
   /**
    * Authenticate with the reeeductio server.
+   *
+   * If the current user is the space root (same keypair as the space),
+   * also runs one-time setup: ensures the "listener" role exists with the
+   * correct capabilities, and enables OPAQUE for password-based login.
    */
   async authenticate(): Promise<void> {
     await this.space.authenticate();
     this._authenticated = true;
+    await this.runRootSetup();
+  }
+
+  // ============================================================
+  // Root User Setup
+  // ============================================================
+
+  /** Role granted to listeners (read-only library access + own user state). */
+  private static readonly LISTENER_ROLE_ID = 'listener';
+
+  /** Capabilities required on the listener role. */
+  private static readonly LISTENER_CAPABILITIES: Record<string, Capability> = {
+    cap_read_library:   { op: 'read',  path: 'data/library/' },
+    cap_read_blobs:     { op: 'read',  path: 'blobs/' },
+    cap_write_user_data: { op: 'write', path: 'data/user/{self}/' },
+  };
+
+  /**
+   * Returns true if the authenticated user is the space root — i.e. the
+   * keypair used to connect has the same public key as the space itself.
+   */
+  isRootUser(): boolean {
+    const spaceKey = extractFromTypedId(this.spaceId);
+    const userKey  = extractFromTypedId(this.userId);
+    return spaceKey.length === userKey.length &&
+      spaceKey.every((v: number, i: number) => v === userKey[i]);
+  }
+
+  /**
+   * Ensure the "listener" role exists with the required capabilities.
+   * Each step is idempotent — already-present roles/capabilities are skipped.
+   */
+  private async ensureListenerRole(): Promise<void> {
+    const roleId = MusicSpaceService.LISTENER_ROLE_ID;
+
+    // Create role if it doesn't exist yet.
+    try {
+      await this.space.getPlaintextState(`auth/roles/${roleId}`);
+    } catch {
+      await this.space.createRole(roleId, 'Read-only access to the music library');
+    }
+
+    // Grant each capability if not already present.
+    for (const [capId, capability] of Object.entries(MusicSpaceService.LISTENER_CAPABILITIES)) {
+      try {
+        await this.space.getPlaintextState(`auth/roles/${roleId}/rights/${capId}`);
+      } catch {
+        await this.space.grantCapabilityToRole(roleId, capId, capability);
+      }
+    }
+  }
+
+  /**
+   * Run one-time space setup for the root user.
+   * Ensures the listener role is configured and OPAQUE is enabled.
+   * No-ops if the current user is not root.
+   */
+  private async runRootSetup(): Promise<void> {
+    if (!this.isRootUser()) return;
+
+    console.log('[music-space] Root user detected — running space setup');
+    await this.ensureListenerRole();
+    await this.space.enableOpaque();
   }
 
   /**
