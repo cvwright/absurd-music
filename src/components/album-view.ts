@@ -58,6 +58,25 @@ export class AlbumView extends LitElement {
       overflow: hidden;
     }
 
+    @media (max-width: 550px) {
+      .album-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: var(--spacing-lg);
+      }
+
+      .album-artwork {
+        width: 232px;
+        height: 232px;
+      }
+
+      .album-meta {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+    }
+
     .album-artwork img {
       width: 100%;
       height: 100%;
@@ -462,7 +481,6 @@ export class AlbumView extends LitElement {
           ${this.artworkUrl ? html`<img src=${this.artworkUrl} alt="" />` : ''}
         </div>
         <div class="album-info">
-          <div class="album-type">Album</div>
           <h1 class="album-title">${this.album.title}</h1>
           <div class="album-meta">
             <span class="artist-link" @click=${this.goToArtist}>${this.album.artist_name}</span>
@@ -553,6 +571,7 @@ export class AlbumView extends LitElement {
         .items=${this.getTrackListItems()}
         .downloadedIds=${this.cacheService?.cachedTrackIds ?? new Set()}
         .downloadingIds=${this.cacheService?.downloadingTrackIds ?? new Set()}
+        show-track-number
         .actionRenderer=${this.renderTrackAction}
         @track-click=${this.handleTrackListClick}
       ></track-list>

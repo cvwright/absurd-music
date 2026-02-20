@@ -17,19 +17,7 @@ export class TrackList extends LitElement {
       display: block;
     }
 
-    .track-header {
-      display: grid;
-      grid-template-columns: var(--grid-columns);
-      gap: var(--spacing-sm);
-      padding: var(--spacing-sm) var(--spacing-xs) var(--spacing-sm) var(--spacing-xs);
-      border-bottom: 1px solid var(--color-bg-highlight);
-      color: var(--color-text-subdued);
-      font-size: var(--font-size-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    .track-item {
+.track-item {
       display: grid;
       grid-template-columns: var(--grid-columns);
       gap: var(--spacing-sm);
@@ -53,10 +41,12 @@ export class TrackList extends LitElement {
 
     .track-number {
       color: var(--color-text-subdued);
-      text-align: center;
+      font-size: var(--font-size-sm);
+      text-align: right;
+      padding-right: var(--spacing-sm);
     }
 
-    .track-artwork {
+.track-artwork {
       width: 40px;
       height: 40px;
       border-radius: var(--radius-xs, 2px);
@@ -230,13 +220,23 @@ export class TrackList extends LitElement {
 
     /* Responsive: hide album column at narrow widths */
     @media (max-width: 600px) {
-      :host([show-album]) .track-header,
       :host([show-album]) .track-item {
         grid-template-columns: var(--grid-columns-narrow);
       }
 
-      :host([show-album]) .track-album,
-      :host([show-album]) .header-album {
+      :host([show-album]) .track-album {
+        display: none;
+      }
+    }
+
+    /* Responsive: hide duration at very narrow widths */
+    @media (max-width: 480px) {
+      :host([show-album]) .track-item,
+      .track-item {
+        grid-template-columns: var(--grid-columns-narrowest);
+      }
+
+      .track-duration {
         display: none;
       }
     }
@@ -245,6 +245,10 @@ export class TrackList extends LitElement {
   /** The track items to display */
   @property({ attribute: false })
   items: TrackListItem[] = [];
+
+  /** Whether to show the track number column */
+  @property({ type: Boolean, reflect: true, attribute: 'show-track-number' })
+  showTrackNumber = false;
 
   /** Whether to show the artwork column */
   @property({ type: Boolean, reflect: true, attribute: 'show-artwork' })
@@ -272,37 +276,30 @@ export class TrackList extends LitElement {
   override willUpdate(changed: PropertyValues) {
     const hasDownloads = this.downloadedIds.size > 0 || this.downloadingIds.size > 0;
     if (
-      changed.has('showArtwork') || changed.has('showAlbum') ||
+      changed.has('showTrackNumber') || changed.has('showArtwork') || changed.has('showAlbum') ||
       changed.has('actionRenderer') || hasDownloads !== this.showDownloaded
     ) {
       this.showDownloaded = hasDownloads;
-      this.style.setProperty('--grid-columns', this.buildColumns(true));
-      this.style.setProperty('--grid-columns-narrow', this.buildColumns(false));
+      this.style.setProperty('--grid-columns', this.buildColumns(true, true));
+      this.style.setProperty('--grid-columns-narrow', this.buildColumns(false, true));
+      this.style.setProperty('--grid-columns-narrowest', this.buildColumns(false, false));
     }
   }
 
-  private buildColumns(includeAlbum: boolean): string {
-    const cols: string[] = ['28px']; // track number
+  private buildColumns(includeAlbum: boolean, includeDuration: boolean): string {
+    const cols: string[] = [];
+    if (this.showTrackNumber) cols.push('28px');
     if (this.showArtwork) cols.push('40px');
     cols.push('1fr'); // title/info
     if (this.showAlbum && includeAlbum) cols.push('1fr');
     if (this.showDownloaded) cols.push('14px'); // downloaded indicator
-    cols.push('44px'); // duration
+    if (includeDuration) cols.push('44px'); // duration
     if (this.actionRenderer) cols.push('32px');
     return cols.join(' ');
   }
 
   render() {
     return html`
-      <div class="track-header">
-        <span class="track-number">#</span>
-        ${this.showArtwork ? html`<span></span>` : nothing}
-        <span>Title</span>
-        ${this.showAlbum ? html`<span class="header-album">Album</span>` : nothing}
-        ${this.showDownloaded ? html`<span></span>` : nothing}
-        <span class="track-duration">Time</span>
-        ${this.actionRenderer ? html`<span></span>` : nothing}
-      </div>
       <lit-virtualizer
         .items=${this.items}
         .renderItem=${(item: TrackListItem, index: number) => this.renderTrackItem(item, index)}
@@ -313,7 +310,7 @@ export class TrackList extends LitElement {
   private renderTrackItem(item: TrackListItem, index: number) {
     return html`
       <div class="track-item" @click=${(e: Event) => this.handleTrackClick(e, item, index)}>
-        <span class="track-number">${item.displayNumber ?? index + 1}</span>
+        ${this.showTrackNumber ? html`<span class="track-number">${item.displayNumber ?? index + 1}</span>` : nothing}
         ${this.showArtwork ? html`
           <div class="track-artwork">
             ${item.artworkUrl ? html`<img src=${item.artworkUrl} alt="" loading="lazy" />` : nothing}
