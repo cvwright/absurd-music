@@ -370,9 +370,16 @@ export class PopularView extends LitElement {
   }
 
   private renderTrackRow(track: PopularTrack, rank: number, sectionTrackIds: string[]) {
+    const artworkUrl = track.artwork_blob_id ? this.artworkUrls.get(track.artwork_blob_id) : undefined;
+    if (track.artwork_blob_id && !this.artworkUrls.has(track.artwork_blob_id)) {
+      this.loadArtwork(track);
+    }
     return html`
       <div class="track-row" @click=${() => this.playTrack(track.track_id, sectionTrackIds)}>
         <span class="track-rank">${rank}</span>
+        <div class="track-artwork">
+          ${artworkUrl ? html`<img src=${artworkUrl} alt="" loading="lazy" />` : nothing}
+        </div>
         <div class="track-info">
           <span class="track-title">${track.title}</span>
           <span class="track-subtitle">${track.artist}</span>
@@ -381,6 +388,39 @@ export class PopularView extends LitElement {
         <span class="track-duration">${this.formatDuration(track.duration_ms)}</span>
       </div>
     `;
+  }
+
+  private loadArtwork(track: PopularTrack) {
+    const { artwork_blob_id: blobId, artwork_blob_key: blobKey, artwork_mime_type: mimeType } = track;
+    if (!blobId || !blobKey || !this.musicSpace) return;
+    // Mark as loading to prevent duplicate requests
+    this.artworkUrls.set(blobId, '');
+    this.loadArtworkAsync(blobId, blobKey, mimeType);
+  }
+
+  private async loadArtworkAsync(blobId: string, blobKey: string, mimeType?: string) {
+    try {
+      if (this.cacheService) {
+        const cached = await this.cacheService.getArtwork(blobId);
+        if (cached) {
+          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          this.artworkUrls.set(blobId, URL.createObjectURL(blob));
+          this.requestUpdate();
+          return;
+        }
+      }
+      const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
+      const resolvedMime = mimeType ?? 'image/jpeg';
+      if (this.cacheService) {
+        await this.cacheService.cacheArtwork(blobId, data, resolvedMime);
+      }
+      const blob = new Blob([data], { type: resolvedMime });
+      this.artworkUrls.set(blobId, URL.createObjectURL(blob));
+      this.requestUpdate();
+    } catch (err) {
+      console.warn(`[PopularView] Failed to load artwork ${blobId}:`, err);
+      this.artworkUrls.delete(blobId);
+    }
   }
 
   private renderEmptyState() {
