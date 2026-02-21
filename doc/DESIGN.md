@@ -38,7 +38,8 @@ Personal Music Space (C_...)
 ├── /user/{user_id}/
 │   ├── playlists/{playlist_id}            # User playlists
 │   ├── favorites                          # Favorited track IDs
-│   ├── recently_played                    # Play history (ring buffer)
+│   ├── play_counts/{date}                 # Plays for that period → {track_id: count}
+│   │                                      #   date is yyyy-mm-dd (daily), yyyy-mm (monthly), or yyyy (yearly)
 │   ├── queue                              # Current play queue
 │   ├── playback_state                     # Current position, volume, etc.
 │   └── preferences/cache                  # Cache settings
@@ -362,6 +363,84 @@ Posted to topic chain for activity tracking:
 - Analytics ("most played" stats)
 - "On this day" memories
 - Future: social features (share with friends)
+
+## Play Count Tracking
+
+### Design Goals
+
+- Per-user counts (each user has their own history)
+- Accurate long-term totals that survive weeks and months
+- Fast "recently popular" query without scanning the entire library
+- Acceptable behavior under multi-device use
+
+### Date-Keyed Count Documents
+
+Play counts are stored in documents keyed by date bucket. Each document is a flat map of `{track_id: count}` for plays that fall within that period:
+
+```
+user/{user_id}/play_counts/2026-02-21   →  { "track_abc": 3, "track_def": 1 }   # daily
+user/{user_id}/play_counts/2026-02      →  { "track_abc": 15, "track_def": 8 }  # monthly rollup
+user/{user_id}/play_counts/2026         →  { "track_abc": 102, "track_def": 47 } # yearly rollup
+```
+
+All date keys use UTC for cross-device consistency. Missing document = no plays that period (no pre-creation needed).
+
+| Tier | Key format | Retention |
+|---|---|---|
+| Daily | `yyyy-mm-dd` | Last 7 calendar days |
+| Monthly | `yyyy-mm` | Last 12 calendar months |
+| Yearly | `yyyy` | All years (never evicted) |
+
+**Compaction** runs lazily on each write: daily entries older than 7 days are merged into their `yyyy-mm` document and deleted; monthly entries older than 12 months are merged into their `yyyy` document and deleted. Merging adds counts for each `track_id` key; the finer-tier document is deleted after merging to avoid double-counting.
+
+**Steady-state document count:** at most 7 daily + 12 monthly + N yearly, where N grows by 1 per year. Effectively fixed for a human lifetime of listening.
+
+**Document size:** bounded by unique tracks played in that period × ~20 bytes per entry. Daily docs are ~1 KB; monthly rollups after a year of listening may reach ~30 KB. All well within budget.
+
+### Queries
+
+| Query | Mechanism | Cost |
+|---|---|---|
+| What did I play today? | Fetch `play_counts/{today}` | 1 document |
+| Recently popular (last 7 days) | Fetch last 7 daily docs, aggregate client-side | ≤ 7 documents |
+| Listening history for a specific date | Fetch `play_counts/{date}` | 1 document |
+| Total plays for track X (all time) | Fetch all docs, sum track X's counts | ≤ 7 + 12 + N_years documents |
+| Most played this month | Fetch `play_counts/{yyyy-mm}` | 1 document (after compaction) |
+| Year-in-review | Fetch `play_counts/{yyyy}` | 1 document (after compaction) |
+
+No ring buffer and no separate per-track totals document are needed. The full set of docs needed for an all-time per-track total is bounded and small (e.g. 22 docs for a 3-year-old library).
+
+### Multi-Device Consistency
+
+Write conflicts are possible when two devices perform a read-modify-write on the same document within the same window. Because a person cannot meaningfully listen on two devices at once, true concurrent writes are vanishingly rare. Compaction writes on old documents (never written to by live plays) carry no conflict risk.
+
+**Conflict window** — the vulnerability period for device 1 is the time between its read landing and its write landing, approximately one round-trip:
+
+| Connection | Typical RTT | Full read-modify-write | Conflict window |
+|---|---|---|---|
+| Home fiber | ~30 ms | ~60 ms | ~30 ms |
+| Mobile 4G | ~70 ms | ~140 ms | ~70 ms |
+| Mobile 5G (sub-6 GHz) | ~45 ms | ~90 ms | ~45 ms |
+
+At 20 plays/hour (0.006/sec), the probability of two devices colliding within a 50 ms window is P ≈ 0.006 × 0.05 ≈ **0.03% per play** — roughly 1 lost increment per 3,000 plays, and only if both devices are actively playing simultaneously. The worst case is losing a single play increment, which is acceptable for a listen-count feature.
+
+### Play Detection
+
+`PlayCountService` subscribes to `PlaybackService` events and uses a boolean flag to ensure at most one count per track session:
+
+- On `loading`: reset session state (new track starting)
+- On `timeupdate`: record a play once position crosses the threshold:
+  - Tracks > 60 s: threshold = 30 s
+  - Tracks ≤ 60 s: threshold = 50% of duration
+- On `ended`: record a play if not already counted (catches tracks played to completion below the position threshold)
+
+Seeking back and replaying within the same session does **not** produce a second count.
+
+### Write Ordering
+
+Because the day-document write is async, two rapid sequential plays could race at an `await` on the same day's document. `PlayCountService` serializes all writes to the current day's document using a single promise chain, ensuring reads and writes always complete in order.
+
+Compaction is best-effort and runs after the live play write succeeds. A failed compaction is non-fatal — counts remain accurate across the unmerged daily docs.
 
 ## Playback Architecture
 
@@ -1060,8 +1139,9 @@ const trackId = HMAC-SHA256(space_key, SHA256(audioFile));  // Private AND deter
 
 ### Analytics
 
-- Listening statistics
-- Most played tracks/artists
+- ✅ Per-day play count documents with track maps (`PlayCountService`)
+- ✅ "Recently popular" tracks by fetching last N day documents and aggregating client-side
+- Most played artists (aggregate per-track counts by artist_id)
 - Listening patterns over time
 - Year-in-review summaries
 

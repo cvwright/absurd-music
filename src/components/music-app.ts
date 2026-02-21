@@ -29,10 +29,11 @@ import './login-view.js';
 import './album-view.js';
 import './artist-view.js';
 import './recently-added-view.js';
+import './popular-view.js';
 import './playlist-view.js';
 import './create-playlist-modal.js';
 
-type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent';
+type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent' | 'popular';
 
 /** Distinguish network failures from server-side auth rejections. */
 function isNetworkError(err: unknown): boolean {
@@ -416,6 +417,12 @@ export class MusicApp extends LitElement {
           .cacheService=${this.cacheService}
           ?offline=${this.offline}
         ></recently-added-view>`;
+      case 'popular':
+        return html`<popular-view
+          .playCountService=${this.playCountService}
+          .musicSpace=${this.musicSpace}
+          ?offline=${this.offline}
+        ></popular-view>`;
       default:
         return html`<library-view
           .musicSpace=${this.musicSpace}

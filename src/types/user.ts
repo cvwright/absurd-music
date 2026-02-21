@@ -60,26 +60,6 @@ export interface Favorites {
   updated_at: number;
 }
 
-/**
- * Recently played entry
- */
-export interface RecentlyPlayedEntry {
-  /** Track ID */
-  track_id: string;
-  /** When it was played (Unix timestamp) */
-  played_at: number;
-}
-
-/**
- * Recently played stored at /user/{user_id}/recently_played
- * Implemented as a ring buffer with fixed max size.
- */
-export interface RecentlyPlayed {
-  /** Recent tracks (most recent first) */
-  entries: RecentlyPlayedEntry[];
-  /** Maximum entries to keep */
-  max_entries: number;
-}
 
 /**
  * Cache preferences stored at /user/{user_id}/preferences/cache
@@ -153,23 +133,12 @@ export interface CachedArtwork {
 }
 
 /**
- * Per-track play count data stored at user/{user_id}/play_counts/{track_id}.
+ * Play count document stored at user/{user_id}/play_counts/{date}.
  *
- * Uses a three-tier rolling window with automatic compaction on each write:
- *   - daily:   last 7 calendar days    (keys: "YYYY-MM-DD")
- *   - monthly: last 12 calendar months (keys: "YYYY-MM")
- *   - yearly:  all years, never evicted (keys: "YYYY")
- *
- * Stale daily entries are rolled into monthly on write; stale monthly entries
- * are rolled into yearly. The all-time total is the sum of all three tiers.
+ * Maps track_id → play count for all plays that fall within that date period.
+ * The date key determines the granularity:
+ *   - "YYYY-MM-DD"  daily bucket   (last 7 days; older ones compacted into monthly)
+ *   - "YYYY-MM"     monthly bucket (last 12 months; older ones compacted into yearly)
+ *   - "YYYY"        yearly bucket  (all years, never evicted)
  */
-export interface TrackPlayCount {
-  /** Play counts keyed by ISO date string "YYYY-MM-DD" (last 7 days only) */
-  daily: Record<string, number>;
-  /** Play counts keyed by year-month string "YYYY-MM" (last 12 months only) */
-  monthly: Record<string, number>;
-  /** Play counts keyed by year string "YYYY" (all years) */
-  yearly: Record<string, number>;
-  /** Unix timestamp of last write */
-  updated_at: number;
-}
+export type PlayCountMap = Record<string, number>;

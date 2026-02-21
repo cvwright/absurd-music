@@ -309,7 +309,7 @@ export class MusicSpaceService {
     // Decrypt using the track's DEK
     const decrypted = await this.crypto.decryptBlob(encryptedBlob, encryptionKey);
 
-    return decrypted.buffer;
+    return decrypted.buffer as ArrayBuffer;
   }
 
   /**
@@ -368,6 +368,45 @@ export class MusicSpaceService {
     await this.space.setEncryptedState(fullPath, stringToBytes(JSON.stringify(data)));
   }
 
+  /**
+   * Get encrypted KV data at a user-scoped path.
+   *
+   * @param useCache - When true (default), returns cached value if available.
+   */
+  async getUserData<T>(path: string, useCache = true): Promise<T> {
+    const fullPath = `user/${this.userId}/${path}`;
+    if (useCache) {
+      try {
+        if (this.cache) {
+          const cached = await this.cache.getMetadata(this.cacheKey(fullPath));
+          if (cached) return JSON.parse(cached) as T;
+        }
+      } catch { /* cache miss is fine */ }
+    }
+    const data = await this.space.getEncryptedData(fullPath);
+    const result = JSON.parse(bytesToString(data)) as T;
+    this.cacheWrite(fullPath, result);
+    return result;
+  }
+
+  /**
+   * Set encrypted KV data at a user-scoped path.
+   */
+  async setUserData<T>(path: string, value: T): Promise<void> {
+    const fullPath = `user/${this.userId}/${path}`;
+    await this.space.setEncryptedData(fullPath, stringToBytes(JSON.stringify(value)));
+    this.cacheWrite(fullPath, value);
+  }
+
+  /**
+   * Delete encrypted KV data at a user-scoped path by writing null.
+   */
+  async deleteUserData(path: string): Promise<void> {
+    const fullPath = `user/${this.userId}/${path}`;
+    await this.space.setEncryptedData(fullPath, stringToBytes('null'));
+    this.cacheRemove(fullPath);
+  }
+
   // ============================================================
   // Playlist Operations
   // ============================================================
@@ -388,18 +427,8 @@ export class MusicSpaceService {
    * Get the playlist index (list of all playlists).
    */
   async getPlaylistIndex(): Promise<PlaylistIndex> {
-    const key = `user/${this.userId}/playlist_index`;
     try {
-      if (this.cache) {
-        const cached = await this.cache.getMetadata(this.cacheKey(key));
-        if (cached) return JSON.parse(cached) as PlaylistIndex;
-      }
-    } catch { /* cache miss is fine */ }
-    try {
-      const data = await this.space.getEncryptedData(key);
-      const result = JSON.parse(bytesToString(data)) as PlaylistIndex;
-      this.cacheWrite(key, result);
-      return result;
+      return await this.getUserData<PlaylistIndex>('playlist_index');
     } catch {
       return { playlists: [], updated_at: Date.now() };
     }
@@ -409,32 +438,15 @@ export class MusicSpaceService {
    * Update the playlist index.
    */
   async setPlaylistIndex(index: PlaylistIndex): Promise<void> {
-    const json = JSON.stringify(index);
-    await this.space.setEncryptedData(
-      `user/${this.userId}/playlist_index`,
-      stringToBytes(json)
-    );
-    this.cacheWrite(`user/${this.userId}/playlist_index`, index);
+    await this.setUserData('playlist_index', index);
   }
 
   /**
    * Get a playlist by ID.
    */
   async getPlaylist(playlistId: string): Promise<Playlist> {
-    const key = `user/${this.userId}/playlists/${playlistId}`;
-    try {
-      if (this.cache) {
-        const cached = await this.cache.getMetadata(this.cacheKey(key));
-        if (cached) {
-          const playlist = JSON.parse(cached) as Playlist | null;
-          if (playlist) return playlist;
-        }
-      }
-    } catch { /* cache miss is fine */ }
-    const data = await this.space.getEncryptedData(key);
-    const playlist = JSON.parse(bytesToString(data)) as Playlist | null;
+    const playlist = await this.getUserData<Playlist | null>(`playlists/${playlistId}`);
     if (!playlist) throw new Error(`Playlist not found: ${playlistId}`);
-    this.cacheWrite(key, playlist);
     return playlist;
   }
 
@@ -442,23 +454,14 @@ export class MusicSpaceService {
    * Save a playlist.
    */
   async setPlaylist(playlist: Playlist): Promise<void> {
-    const json = JSON.stringify(playlist);
-    await this.space.setEncryptedData(
-      `user/${this.userId}/playlists/${playlist.playlist_id}`,
-      stringToBytes(json)
-    );
-    this.cacheWrite(`user/${this.userId}/playlists/${playlist.playlist_id}`, playlist);
+    await this.setUserData(`playlists/${playlist.playlist_id}`, playlist);
   }
 
   /**
    * Delete a playlist by setting it to null.
    */
   async deletePlaylist(playlistId: string): Promise<void> {
-    await this.space.setEncryptedData(
-      `user/${this.userId}/playlists/${playlistId}`,
-      stringToBytes('null')
-    );
-    this.cacheRemove(`user/${this.userId}/playlists/${playlistId}`);
+    await this.deleteUserData(`playlists/${playlistId}`);
   }
 
   // ============================================================

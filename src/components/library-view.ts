@@ -981,28 +981,9 @@ export class LibraryView extends LitElement {
     this.trackMenuOpen = this.trackMenuOpen === trackId ? null : trackId;
   }
 
-  private audioMimeType(format: string): string {
-    const base = format.split('/')[0].trim().toLowerCase();
-    switch (base) {
-      case 'm4a': case 'mp42': case 'isom': case 'iso2': case 'aac': return 'audio/mp4';
-      case 'mp3': return 'audio/mpeg';
-      case 'ogg': return 'audio/ogg';
-      case 'opus': return 'audio/ogg; codecs=opus';
-      case 'flac': return 'audio/flac';
-      case 'wav': return 'audio/wav';
-      default: return `audio/${base}`;
-    }
-  }
-
   private renderTrackMenu(trackId: string) {
-    const track = this.tracks.find(t => t.id === trackId);
-    const mimeType = track?.file_format ? this.audioMimeType(track.file_format) : undefined;
     return html`
       <div class="track-menu-dropdown">
-        ${mimeType ? html`
-          <div class="track-menu-section-title" title="Audio MIME type (debug)">MIME: ${mimeType}</div>
-          <div class="track-menu-divider"></div>
-        ` : ''}
         <button class="track-menu-item" @click=${(e: Event) => this.handleAddToQueue(e, trackId)}>
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
