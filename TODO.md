@@ -3,7 +3,9 @@
 3. ~~Wire up PlaybackService - Connect player-bar to the service~~
 4. ~~Library view component - Show actual tracks, albums, and artists~~
 5. ~~Album/Artist views - Detail pages with track listings~~
-6. Real authentication flow - Connect to login space, get music space credentials
+6. Real authentication flow
+   1. Non-SSO username/password with OPAQUE
+   2. SSO with OPAQUE in the login app
 7. Artist view - Photo, description, etc
 8. ~~Playlist support - Create, Add music, Edit, View, Play~~
 9. Search interface
