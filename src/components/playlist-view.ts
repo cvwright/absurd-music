@@ -407,10 +407,19 @@ export class PlaylistView extends LitElement {
     try {
       this.playlist = await this.playlistService.getPlaylist(this.playlistId);
 
-      // Load full track data
-      this.tracks = await Promise.all(
+      // Load full track data, silently skipping any deleted/missing tracks
+      const trackResults = await Promise.allSettled(
         this.playlist.track_ids.map((id) => this.musicSpace!.getTrack(id))
       );
+      this.tracks = trackResults
+        .filter((r): r is PromiseFulfilledResult<Track> => {
+          if (r.status === 'rejected') {
+            console.warn('Skipping missing track:', r.reason);
+            return false;
+          }
+          return true;
+        })
+        .map((r) => r.value);
 
       // Load artwork for tracks
       await this.loadArtwork();
