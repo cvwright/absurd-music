@@ -118,6 +118,30 @@ export class MusicApp extends LitElement {
       height: 24px;
     }
 
+    .loading-screen {
+      grid-column: 1 / -1;
+      grid-row: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100vw;
+      background-color: var(--color-bg-primary);
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--color-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Responsive: collapse sidebar on small screens */
     @media (max-width: 768px) {
       :host {
@@ -145,6 +169,9 @@ export class MusicApp extends LitElement {
       }
     }
   `;
+
+  @state()
+  private loading = true;
 
   @state()
   private authenticated = false;
@@ -239,27 +266,31 @@ export class MusicApp extends LitElement {
   }
 
   private async tryAutoLogin() {
-    const savedConfig = await loadCredentials();
-    if (!savedConfig) return;
-
-    this.musicSpace = new MusicSpaceService(savedConfig);
-
     try {
-      await this.musicSpace.authenticate();
-      await this.initServices();
-      this.authenticated = true;
-      this.updateUrlForSpace(savedConfig.spaceId);
-    } catch (err) {
-      if (isNetworkError(err)) {
-        // Network unavailable — start in offline/cached mode
+      const savedConfig = await loadCredentials();
+      if (!savedConfig) return;
+
+      this.musicSpace = new MusicSpaceService(savedConfig);
+
+      try {
+        await this.musicSpace.authenticate();
         await this.initServices();
         this.authenticated = true;
         this.updateUrlForSpace(savedConfig.spaceId);
-      } else {
-        // Auth rejected by server — clear credentials
-        this.musicSpace = null;
-        clearCredentials();
+      } catch (err) {
+        if (isNetworkError(err)) {
+          // Network unavailable — start in offline/cached mode
+          await this.initServices();
+          this.authenticated = true;
+          this.updateUrlForSpace(savedConfig.spaceId);
+        } else {
+          // Auth rejected by server — clear credentials
+          this.musicSpace = null;
+          clearCredentials();
+        }
       }
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -283,6 +314,12 @@ export class MusicApp extends LitElement {
   }
 
   render() {
+    if (this.loading) {
+      return html`<div class="loading-screen">
+        <div class="loading-spinner"></div>
+      </div>`;
+    }
+
     if (!this.authenticated) {
       return html`<login-view
         .spaceId=${this.urlSpaceId ?? ''}

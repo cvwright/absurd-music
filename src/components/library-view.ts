@@ -42,7 +42,7 @@ export class LibraryView extends LitElement {
     }
 
     .header {
-      margin-bottom: var(--spacing-xl);
+      margin-bottom: 0;
     }
 
     .header-row {
@@ -80,12 +80,29 @@ export class LibraryView extends LitElement {
     }
 
     .content {
-      margin-top: var(--spacing-lg);
+      margin-top: 0;
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
       overflow-y: auto;
+    }
+
+    /* Content loading state */
+    .content-loading {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .content-spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--color-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
 
     /* Empty state */
@@ -301,16 +318,8 @@ export class LibraryView extends LitElement {
         padding-top: var(--spacing-sm);
       }
 
-      .header {
-        margin-bottom: 0;
-      }
-
       .header-row {
         margin-bottom: 0;
-      }
-
-      .content {
-        margin-top: var(--spacing-sm);
       }
 
       .controls-row {
@@ -441,6 +450,9 @@ export class LibraryView extends LitElement {
   private trackMenuOpen: string | null = null;
 
   @state()
+  private loading = true;
+
+  @state()
   private isEmpty = true;
 
   @state()
@@ -541,6 +553,7 @@ export class LibraryView extends LitElement {
     }
 
     try {
+      this.loading = true;
       const index: SearchIndex = await this.musicSpace.getSearchIndex();
       this.isEmpty = index.tracks.length === 0;
 
@@ -627,6 +640,8 @@ export class LibraryView extends LitElement {
       this.tracks = [];
       this.albums = [];
       this.artists = [];
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -675,7 +690,8 @@ export class LibraryView extends LitElement {
             <span>Drop files to import</span>
           </div>
         ` : ''}
-        ${this.isEmpty ? this.renderEmptyState() : html`
+        ${this.loading ? html`<div class="content-loading"><div class="content-spinner"></div></div>`
+          : this.isEmpty ? this.renderEmptyState() : html`
           ${this.renderControls()}
           ${this.renderContent()}
         `}

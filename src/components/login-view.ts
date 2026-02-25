@@ -8,7 +8,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { getPublicKeyAsync } from '@noble/ed25519';
-import { decodeBase64 } from 'reeeductio';
+import { performOpaqueLogin } from 'reeeductio';
 import type { MusicSpaceConfig } from '@/services/music-space.js';
 
 @customElement('login-view')
@@ -106,8 +106,8 @@ export class LoginView extends LitElement {
 
   @property() spaceId = '';
   @property({ type: Boolean }) spaceIdFromUrl = false;
-  @state() private privateKey = '';
-  @state() private symmetricRoot = '';
+  @state() private username = '';
+  @state() private combinedKey = '';
   @state() private serverUrl = import.meta.env.VITE_DEFAULT_SERVER_URL ?? '';
   @state() private error = '';
   @state() private connecting = false;
@@ -133,22 +133,24 @@ export class LoginView extends LitElement {
           />
         `}
 
-        <label for="privateKey">Private Key</label>
+        <label for="username">Username or User ID</label>
         <input
-          id="privateKey"
-          type="password"
-          .value=${this.privateKey}
-          @input=${(e: Event) => this.privateKey = (e.target as HTMLInputElement).value}
-          placeholder="Base64 or hex encoded"
+          id="username"
+          type="text"
+          .value=${this.username}
+          @input=${(e: Event) => this.username = (e.target as HTMLInputElement).value}
+          placeholder="Email, username, or reeeductio user ID"
+          autocomplete="username"
         />
 
-        <label for="symmetricRoot">Symmetric Root</label>
+        <label for="combinedKey">Password or Secret Key</label>
         <input
-          id="symmetricRoot"
+          id="combinedKey"
           type="password"
-          .value=${this.symmetricRoot}
-          @input=${(e: Event) => this.symmetricRoot = (e.target as HTMLInputElement).value}
-          placeholder="Base64 or hex encoded"
+          .value=${this.combinedKey}
+          @input=${(e: Event) => this.combinedKey = (e.target as HTMLInputElement).value}
+          placeholder="Password, or 128 hex characters (private key + symmetric root)"
+          autocomplete="current-password"
         />
 
         <label for="serverUrl">Server URL (optional)</label>
@@ -171,23 +173,17 @@ export class LoginView extends LitElement {
     `;
   }
 
-  /**
-   * Decode a string as either hex or base64.
-   * Hex is detected if the string is 64 chars and all hex digits (for 32-byte keys).
-   */
-  private decodeKey(input: string): Uint8Array {
-    const trimmed = input.trim();
-    // 32 bytes = 64 hex chars
-    if (trimmed.length === 64 && /^[0-9a-fA-F]+$/.test(trimmed)) {
-      // Hex encoding
-      const bytes = new Uint8Array(32);
-      for (let i = 0; i < 32; i++) {
-        bytes[i] = parseInt(trimmed.slice(i * 2, i * 2 + 2), 16);
-      }
-      return bytes;
+  private hexToBytes(hex: string): Uint8Array {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     }
-    // Otherwise try base64
-    return decodeBase64(trimmed);
+    return bytes;
+  }
+
+  /** Returns true if the inputs look like a direct raw-key login. */
+  private isDirectKeyLogin(username: string, password: string): boolean {
+    return /^U[A-Za-z0-9_-]{43}$/.test(username) && /^[0-9a-fA-F]{128}$/.test(password);
   }
 
   private async handleConnect() {
@@ -195,18 +191,41 @@ export class LoginView extends LitElement {
     this.connecting = true;
 
     try {
-      const privateKeyBytes = this.decodeKey(this.privateKey);
+      const username = this.username.trim();
+      const password = this.combinedKey.trim();
+      const spaceId = this.spaceId.trim();
+      const baseUrl = this.serverUrl.trim();
+
+      let privateKeyBytes: Uint8Array;
+      let symmetricRootBytes: Uint8Array;
+
+      if (this.isDirectKeyLogin(username, password)) {
+        // Direct key login: first 64 hex chars = private key, next 64 = symmetric root
+        privateKeyBytes = this.hexToBytes(password.slice(0, 64));
+        symmetricRootBytes = this.hexToBytes(password.slice(64));
+      } else {
+        // OPAQUE login: recover keys from username + password
+        const creds = await performOpaqueLogin({
+          fetchFn: fetch,
+          baseUrl,
+          spaceId,
+          username,
+          password,
+        });
+        privateKeyBytes = creds.privateKey;
+        symmetricRootBytes = creds.symmetricRoot;
+      }
+
       const publicKeyBytes = await getPublicKeyAsync(privateKeyBytes);
-      const symmetricRootBytes = this.decodeKey(this.symmetricRoot);
 
       // Request persistent storage so IndexedDB isn't evicted
       navigator.storage.persist();
 
       const config: MusicSpaceConfig = {
-        spaceId: this.spaceId.trim(),
+        spaceId,
         keyPair: { privateKey: privateKeyBytes, publicKey: publicKeyBytes },
         symmetricRoot: symmetricRootBytes,
-        ...(this.serverUrl.trim() && { baseUrl: this.serverUrl.trim() }),
+        ...(baseUrl && { baseUrl }),
       };
 
       this.dispatchEvent(new CustomEvent('login', {
@@ -215,7 +234,7 @@ export class LoginView extends LitElement {
         composed: true,
       }));
     } catch (err) {
-      this.error = err instanceof Error ? err.message : 'Invalid credentials format';
+      this.error = err instanceof Error ? err.message : 'Invalid credentials';
       this.connecting = false;
     }
   }
