@@ -74,6 +74,25 @@ export class PlaylistView extends LitElement {
       color: var(--color-text-subdued);
     }
 
+    @media (max-width: 550px) {
+      .playlist-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: var(--spacing-lg);
+      }
+
+      .playlist-artwork {
+        width: 232px;
+        height: 232px;
+      }
+
+      .playlist-meta {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+    }
+
     .playlist-info {
       display: flex;
       flex-direction: column;
@@ -517,7 +536,6 @@ export class PlaylistView extends LitElement {
               `}
         </div>
         <div class="playlist-info">
-          <div class="playlist-type">Playlist</div>
           ${this.editing
             ? html`
                 <input

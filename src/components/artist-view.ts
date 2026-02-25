@@ -97,6 +97,20 @@ export class ArtistView extends LitElement {
       color: var(--color-text-secondary);
     }
 
+    @media (max-width: 550px) {
+      .artist-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: var(--spacing-lg);
+      }
+
+      .artist-photo {
+        width: 232px;
+        height: 232px;
+      }
+    }
+
     .play-controls {
       display: flex;
       align-items: center;
@@ -478,7 +492,6 @@ export class ArtistView extends LitElement {
           </svg>
         </div>
         <div class="artist-info">
-          <div class="artist-type">Artist</div>
           <h1 class="artist-name">${this.artist.name}</h1>
           <div class="artist-stats">
             ${this.albums.length} album${this.albums.length !== 1 ? 's' : ''}
