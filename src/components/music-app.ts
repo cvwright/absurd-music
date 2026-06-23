@@ -17,7 +17,7 @@ import { PlayCountService } from '@/services/play-count.js';
 import { loadCredentials, saveCredentials, clearCredentials } from '@/services/credentials.js';
 import type { PlaylistIndexEntry } from '@/types/index.js';
 
-import { setLogLevel } from 'reeeductio';
+import { setLogLevel, AuthenticationError, AuthorizationError } from 'reeeductio';
 setLogLevel('debug');
 
 
@@ -35,9 +35,18 @@ import './create-playlist-modal.js';
 
 type View = 'library' | 'album' | 'artist' | 'playlist' | 'search' | 'recent' | 'popular';
 
-/** Distinguish network failures from server-side auth rejections. */
-function isNetworkError(err: unknown): boolean {
-  return err instanceof TypeError && /fetch|network/i.test(err.message);
+/**
+ * True only for a genuine server-side credential rejection (HTTP 401/403).
+ *
+ * Everything else — network failures, timeouts, etc. — is treated as
+ * "offline", so we keep cached credentials and start in offline mode rather
+ * than logging the user out. Note: we cannot sniff network errors by message
+ * text, because the `TypeError` message differs per engine ("Failed to fetch"
+ * on Chrome, "Load failed" on iOS Safari), which previously caused offline
+ * launches on iOS to be misread as auth rejections and log the user out.
+ */
+function isAuthRejection(err: unknown): boolean {
+  return err instanceof AuthenticationError || err instanceof AuthorizationError;
 }
 
 @customElement('music-app')
@@ -279,6 +288,9 @@ export class MusicApp extends LitElement {
 
       // Refresh sidebar playlists
       await this.loadPlaylists();
+
+      // Re-warm metadata in case the library changed while we were away.
+      this.warmMetadataCache();
     } catch {
       // Auth still failing — will retry on next online event
     } finally {
@@ -336,15 +348,16 @@ export class MusicApp extends LitElement {
         this.authenticated = true;
         this.updateUrlForSpace(savedConfig.spaceId);
       } catch (err) {
-        if (isNetworkError(err)) {
-          // Network unavailable — start in offline/cached mode
+        if (isAuthRejection(err)) {
+          // Credentials rejected by server — clear them and show login.
+          this.musicSpace = null;
+          clearCredentials();
+        } else {
+          // Network unavailable (or any non-auth failure) — start in
+          // offline/cached mode and keep the saved credentials.
           await this.initServices();
           this.authenticated = true;
           this.updateUrlForSpace(savedConfig.spaceId);
-        } else {
-          // Auth rejected by server — clear credentials
-          this.musicSpace = null;
-          clearCredentials();
         }
       }
     } finally {
@@ -364,6 +377,17 @@ export class MusicApp extends LitElement {
     this.musicSpace.connectWebSocket().catch((err) => {
       console.warn('WebSocket initial connection failed:', err);
     });
+    this.warmMetadataCache();
+  }
+
+  /**
+   * Background-cache all library metadata so the library is fully browsable
+   * offline. Fire-and-forget and only when actually online and authenticated
+   * (the warm pass self-skips when already up to date).
+   */
+  private warmMetadataCache() {
+    if (!this.musicSpace?.isAuthenticated || !navigator.onLine) return;
+    this.musicSpace.warmMetadataCache().catch(() => {});
   }
 
   private async loadPlaylists() {
