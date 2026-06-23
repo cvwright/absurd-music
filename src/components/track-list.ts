@@ -91,7 +91,7 @@ export class TrackList extends LitElement {
       width: 14px;
       height: 14px;
       border: 2px solid var(--color-bg-highlight);
-      border-top-color: var(--color-text-subdued);
+      border-top-color: var(--color-accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
