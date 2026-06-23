@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { MusicSpaceService, CacheService, ImportService } from '@/services/index.js';
+import { MusicSpaceService, CacheService, ImportService, safeImageMimeType } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { Album, Track, TrackListItem } from '@/types/index.js';
 import './track-list.js';
@@ -424,7 +424,7 @@ export class AlbumView extends LitElement {
       if (this.cacheService) {
         const cached = await this.cacheService.getArtwork(artworkBlobId);
         if (cached) {
-          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
           this.artworkUrl = URL.createObjectURL(blob);
           return;
         }
@@ -438,7 +438,7 @@ export class AlbumView extends LitElement {
         await this.cacheService.cacheArtwork(artworkBlobId, data, artworkMimeType);
       }
 
-      const blob = new Blob([data], { type: artworkMimeType });
+      const blob = new Blob([data], { type: safeImageMimeType(artworkMimeType) });
       this.artworkUrl = URL.createObjectURL(blob);
     } catch (err) {
       console.warn('Failed to load album artwork:', err);

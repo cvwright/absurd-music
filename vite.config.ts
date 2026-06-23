@@ -3,6 +3,11 @@ import { resolve } from 'path';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  server: {
+    headers: {
+      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src blob:; connect-src 'self' https: ws: wss:; worker-src 'self'; frame-ancestors 'none';",
+    },
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

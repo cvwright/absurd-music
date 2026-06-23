@@ -7,7 +7,7 @@
 export { MusicSpaceService } from './music-space.js';
 export { CryptoService } from './crypto.js';
 export { CacheService } from './cache.js';
-export { PlaybackService } from './playback.js';
+export { PlaybackService, safeImageMimeType } from './playback.js';
 export { ImportService } from './import.js';
 export { PlaylistService } from './playlist.js';
 export { PlayCountService } from './play-count.js';

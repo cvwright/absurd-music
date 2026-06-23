@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
     "firebase:login": "firebase login",
     "firebase:use": "firebase use --add",
     "deploy": "npm run build && firebase deploy",
@@ -21,8 +22,11 @@
     "reeeductio": "file:../../reeeductio/typescript-sdk"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
     "firebase-tools": "^15.6.0",
     "typescript": "~5.6.2",
+    "typescript-eslint": "^8.57.1",
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^1.2.0"
   }

@@ -7,6 +7,7 @@ Browser-based encrypted music player using Lit web components and the reeeductio
 - `npm run dev` - Start dev server
 - `npm run build` - Type check and build
 - `npm run typecheck` - TypeScript check only
+- `npm run lint` - ESLint (includes security rules banning innerHTML and unsafeHTML)
 
 ## Stack
 

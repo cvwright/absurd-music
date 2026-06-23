@@ -9,6 +9,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { MusicSpaceService } from '@/services/music-space.js';
 import type { CacheService } from '@/services/cache.js';
+import { safeImageMimeType } from '@/services/playback.js';
 import type { Album, ImportNotification } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
 
@@ -277,7 +278,7 @@ export class RecentlyAddedView extends LitElement {
       if (this.cacheService) {
         const cached = await this.cacheService.getArtwork(blobId);
         if (cached) {
-          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
           const url = URL.createObjectURL(blob);
           this.artworkUrls.set(blobId, url);
           this.requestUpdate();
@@ -287,7 +288,7 @@ export class RecentlyAddedView extends LitElement {
 
       // Download from server
       const data = await this.musicSpace.downloadArtworkBlob(blobId, blobKey);
-      const resolvedMimeType = mimeType ?? 'image/jpeg';
+      const resolvedMimeType = safeImageMimeType(mimeType);
 
       // Cache for future use
       if (this.cacheService) {

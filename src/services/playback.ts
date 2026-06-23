@@ -31,8 +31,26 @@ function audioMimeType(format: string): string {
     case 'wav':
       return 'audio/wav';
     default:
-      return `audio/${base}`;
+      return 'audio/octet-stream';
   }
+}
+
+/** Image MIME types that are safe to use in blob URLs rendered via <img>. */
+const SAFE_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
+/**
+ * Returns a safe MIME type for an image blob, falling back to 'image/jpeg' for
+ * any unrecognized type. Prevents untrusted artwork_mime_type values (e.g.,
+ * image/svg+xml with embedded scripts) from being used as blob types.
+ */
+export function safeImageMimeType(mimeType: string | undefined): string {
+  if (!mimeType) return 'image/jpeg';
+  return SAFE_IMAGE_MIME_TYPES.has(mimeType) ? mimeType : 'image/jpeg';
 }
 
 export type PlaybackEvent =
@@ -198,7 +216,7 @@ export class PlaybackService {
       try {
         // Check artwork cache first
         let artworkData: ArrayBuffer | undefined;
-        const mimeType = track.artwork_mime_type ?? 'image/jpeg';
+        const mimeType = safeImageMimeType(track.artwork_mime_type);
 
         if (this.cache) {
           const cached = await this.cache.getArtwork(track.artwork_blob_id);
@@ -232,7 +250,7 @@ export class PlaybackService {
         artwork = [
           { src: this.mediaSessionArtworkUrl, sizes: '512x512', type: mimeType },
         ];
-      } catch (e) {
+      } catch (_e) {
         // Ignore errors for stale requests
         if (this.loadingMediaSessionArtworkForTrackId !== trackId) return;
         // Artwork failure is non-fatal — media session still works without it

@@ -9,6 +9,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { TemplateResult } from 'lit';
 import type { MusicSpaceService, CacheService, PlaylistService } from '@/services/index.js';
+import { safeImageMimeType } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { Playlist, Track, TrackListItem } from '@/types/index.js';
 import './track-list.js';
@@ -456,7 +457,7 @@ export class PlaylistView extends LitElement {
     for (const track of this.tracks) {
       const blobId = track.artwork_blob_id;
       const blobKey = track.artwork_encryption?.key;
-      const mimeType = track.artwork_mime_type || 'image/jpeg';
+      const mimeType = safeImageMimeType(track.artwork_mime_type);
 
       if (!blobId || !blobKey || this.artworkUrls.has(blobId)) continue;
 
@@ -465,7 +466,7 @@ export class PlaylistView extends LitElement {
         if (this.cacheService) {
           const cached = await this.cacheService.getArtwork(blobId);
           if (cached) {
-            const blob = new Blob([cached.imageData], { type: cached.mimeType });
+            const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
             this.artworkUrls.set(blobId, URL.createObjectURL(blob));
             this.requestUpdate();
             continue;

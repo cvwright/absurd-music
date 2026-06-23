@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { ImportService, MusicSpaceService, CacheService } from '@/services/index.js';
+import { ImportService, MusicSpaceService, CacheService, safeImageMimeType } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry, TrackListItem } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
@@ -633,7 +633,7 @@ export class LibraryView extends LitElement {
         }))
       );
 
-    } catch (err) {
+    } catch (_err) {
       // Index doesn't exist yet (empty library)
       console.log('No library index found, library is empty');
       this.isEmpty = true;
@@ -877,7 +877,7 @@ export class LibraryView extends LitElement {
 
     // Sort
     const sorted = [...filtered].sort((a, b) => {
-      let cmp = 0;
+      let cmp = a.title.localeCompare(b.title);
       switch (this.sortField) {
         case 'title':
         case 'album':
@@ -886,8 +886,6 @@ export class LibraryView extends LitElement {
         case 'artist':
           cmp = a.artist_name.localeCompare(b.artist_name) || a.title.localeCompare(b.title);
           break;
-        default:
-          cmp = a.title.localeCompare(b.title);
       }
       return this.sortDirection === 'asc' ? cmp : -cmp;
     });
@@ -1188,7 +1186,7 @@ export class LibraryView extends LitElement {
       if (this.cacheService) {
         const cached = await this.cacheService.getArtwork(blobId);
         if (cached) {
-          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
           const url = URL.createObjectURL(blob);
           this.artworkUrls.set(blobId, url);
           this.requestUpdate();
@@ -1198,7 +1196,7 @@ export class LibraryView extends LitElement {
 
       // Download from server
       const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
-      const resolvedMimeType = mimeType ?? 'image/jpeg';
+      const resolvedMimeType = safeImageMimeType(mimeType);
 
       // Cache in IndexedDB for future sessions
       if (this.cacheService) {

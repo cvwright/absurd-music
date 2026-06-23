@@ -9,6 +9,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackService, PlaybackEvent } from '@/services/playback.js';
 import type { MusicSpaceService, CacheService } from '@/services/index.js';
+import { safeImageMimeType } from '@/services/index.js';
 import type { Track } from '@/types/index.js';
 
 @customElement('player-bar')
@@ -589,7 +590,7 @@ export class PlayerBar extends LitElement {
           if (this.artworkUrl) {
             URL.revokeObjectURL(this.artworkUrl);
           }
-          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
           this.artworkUrl = URL.createObjectURL(blob);
           return;
         }
@@ -601,7 +602,7 @@ export class PlayerBar extends LitElement {
       // Ignore if a newer track started loading
       if (this.loadingArtworkForTrackId !== trackId) return;
 
-      const mimeType = track.artwork_mime_type ?? 'image/jpeg';
+      const mimeType = safeImageMimeType(track.artwork_mime_type);
 
       // Cache in IndexedDB for future sessions
       if (this.cacheService) {

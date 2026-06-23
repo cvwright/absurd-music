@@ -16,6 +16,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { PlayCountService } from '@/services/play-count.js';
 import type { MusicSpaceService } from '@/services/music-space.js';
 import type { CacheService } from '@/services/index.js';
+import { safeImageMimeType } from '@/services/index.js';
 import type { SearchIndexTrack } from '@/types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -403,14 +404,14 @@ export class PopularView extends LitElement {
       if (this.cacheService) {
         const cached = await this.cacheService.getArtwork(blobId);
         if (cached) {
-          const blob = new Blob([cached.imageData], { type: cached.mimeType });
+          const blob = new Blob([cached.imageData], { type: safeImageMimeType(cached.mimeType) });
           this.artworkUrls.set(blobId, URL.createObjectURL(blob));
           this.requestUpdate();
           return;
         }
       }
       const data = await this.musicSpace!.downloadArtworkBlob(blobId, blobKey);
-      const resolvedMime = mimeType ?? 'image/jpeg';
+      const resolvedMime = safeImageMimeType(mimeType);
       if (this.cacheService) {
         await this.cacheService.cacheArtwork(blobId, data, resolvedMime);
       }
