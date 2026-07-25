@@ -88,6 +88,16 @@ export class PlaybackService {
   // Prefetch state
   private prefetchingTrackIds: Set<string> = new Set();
 
+  // Fully-prepared next track: bytes decoded into a ready-to-play blob URL, so
+  // the `ended` -> play() transition can run synchronously. This is what makes
+  // background auto-advance reliable on iOS, where any async work (IndexedDB
+  // read, decode, network) between `ended` and play() gets suspended while the
+  // screen is locked and causes the advance to silently fail. We commit to a
+  // specific queue index at prefetch time (important under shuffle, where the
+  // next index is chosen randomly and must not be re-rolled at transition).
+  private preparedNext: { trackId: string; track: Track; index: number; blobUrl: string } | null =
+    null;
+
   // Media Session artwork URL (for cleanup)
   private mediaSessionArtworkUrl: string | null = null;
 
@@ -319,6 +329,9 @@ export class PlaybackService {
 
     this.emit({ type: 'loading', trackId: track.track_id });
 
+    // Playing an explicit track changes what "next" is; drop any prepared one.
+    this.clearPreparedNext();
+
     try {
       // Check cache first
       let audioData: ArrayBuffer;
@@ -426,6 +439,7 @@ export class PlaybackService {
    * Set the play queue.
    */
   setQueue(trackIds: string[], startIndex = 0): void {
+    this.clearPreparedNext();
     this.queue = {
       track_ids: trackIds,
       current_index: startIndex,
@@ -529,6 +543,8 @@ export class PlaybackService {
    * Toggle shuffle mode.
    */
   toggleShuffle(): void {
+    // Order of "next" changes — drop the prepared track so it's recomputed.
+    this.clearPreparedNext();
     this.queue.shuffle_enabled = !this.queue.shuffle_enabled;
     this.queue.updated_at = Date.now();
     this.emit({ type: 'queuechange', queue: this.queue });
@@ -538,6 +554,8 @@ export class PlaybackService {
    * Cycle through repeat modes: none -> all -> one -> none
    */
   cycleRepeat(): void {
+    // 'one' means replay the current track, so the prepared next must not win.
+    this.clearPreparedNext();
     const modes: RepeatMode[] = ['none', 'all', 'one'];
     const currentIdx = modes.indexOf(this.queue.repeat_mode);
     this.queue.repeat_mode = modes[(currentIdx + 1) % modes.length];
@@ -577,42 +595,119 @@ export class PlaybackService {
     return this.queue.repeat_mode === 'all' ? this.queue.track_ids.length - 1 : null;
   }
 
-  private async handleTrackEnded(): Promise<void> {
-    try {
-      await this.next();
-    } catch (e) {
-      console.error('Failed to advance queue:', e);
+  private handleTrackEnded(): void {
+    // Fast path: if the next track is already fully prepared, advance to it
+    // synchronously — no `await` before play(). This is what lets the advance
+    // survive a locked screen on iOS.
+    if (this.isPreparedNextValid()) {
+      this.playPreparedNext();
+      return;
+    }
+
+    // Fallback: next track wasn't ready in time (cold cache / suspended
+    // prefetch). Do the async advance; may not succeed while locked.
+    this.next().catch((e) => console.error('Failed to advance queue:', e));
+  }
+
+  /**
+   * Advance to the pre-prepared next track synchronously. Everything before
+   * `audio.play()` must stay synchronous — do not introduce any `await` here.
+   */
+  private playPreparedNext(): void {
+    const prepared = this.preparedNext!;
+    this.preparedNext = null;
+
+    this.queue.current_index = prepared.index;
+    this.queue.updated_at = Date.now();
+
+    // The prepared blob URL becomes the current one; revoke the old current.
+    if (this.currentBlobUrl) {
+      URL.revokeObjectURL(this.currentBlobUrl);
+    }
+    this.currentBlobUrl = prepared.blobUrl;
+    this.currentTrack = prepared.track;
+
+    this.audio.src = prepared.blobUrl;
+    this.audio.volume = this.volume;
+    const playPromise = this.audio.play();
+
+    // Post-play work is async and non-blocking — it runs after play() has
+    // already been kicked off, so it can't delay the transition.
+    this.emit({ type: 'loaded', trackId: prepared.trackId });
+    this.updateMediaSessionMetadata(prepared.track);
+    this.prefetchNextTrack();
+
+    if (playPromise) {
+      playPromise.catch((e) => {
+        console.error('Prepared-track play() rejected:', e);
+        this.emit({ type: 'error', error: e as Error });
+      });
     }
   }
 
+  /** True if `preparedNext` still points at a valid slot in the current queue. */
+  private isPreparedNextValid(): boolean {
+    const p = this.preparedNext;
+    return (
+      p !== null && p.index < this.queue.track_ids.length && this.queue.track_ids[p.index] === p.trackId
+    );
+  }
+
+  /** Revoke and drop any prepared-next track (e.g. when the queue changes). */
+  private clearPreparedNext(): void {
+    if (this.preparedNext) {
+      URL.revokeObjectURL(this.preparedNext.blobUrl);
+      this.preparedNext = null;
+    }
+  }
+
+  /**
+   * Ensure the next track is downloaded, decoded, and turned into a ready
+   * blob URL ahead of time so the transition at `ended` is fully synchronous.
+   */
   private async prefetchNextTrack(): Promise<void> {
     if (!this.space || !this.cache) return;
+
+    // Already have a valid prepared track — don't re-roll (matters for shuffle).
+    if (this.isPreparedNextValid()) return;
+    // Any leftover prepared entry is stale.
+    this.clearPreparedNext();
 
     const nextIndex = this.getNextIndex();
     if (nextIndex === null) return;
 
     const trackId = this.queue.track_ids[nextIndex];
-
-    // Already prefetching or cached
     if (this.prefetchingTrackIds.has(trackId)) return;
-    if (await this.cache.hasTrack(trackId)) return;
-
     this.prefetchingTrackIds.add(trackId);
 
     try {
       const track = await this.space.getTrack(trackId);
-      const audioData = await this.space.downloadAudioBlob(
-        track.audio_blob_id,
-        track.encryption.key
-      );
 
-      await this.cache.cacheTrack(trackId, audioData, {
-        title: track.title,
-        artist_name: track.artist_name,
-        album_name: track.album_name,
-        duration_ms: track.duration_ms,
-        file_format: track.file_format,
-      });
+      // Get decoded bytes: cache-first, otherwise download and cache them.
+      let audioData: ArrayBuffer;
+      const cached = await this.cache.getTrack(trackId);
+      if (cached) {
+        audioData = cached.audioData;
+      } else {
+        audioData = await this.space.downloadAudioBlob(track.audio_blob_id, track.encryption.key);
+        await this.cache.cacheTrack(trackId, audioData, {
+          title: track.title,
+          artist_name: track.artist_name,
+          album_name: track.album_name,
+          duration_ms: track.duration_ms,
+          file_format: track.file_format,
+        });
+      }
+
+      // The queue may have moved while downloading; re-validate the slot and
+      // don't clobber a prepared entry that was established in the meantime.
+      if (nextIndex >= this.queue.track_ids.length || this.queue.track_ids[nextIndex] !== trackId) {
+        return;
+      }
+      if (this.preparedNext) return;
+
+      const blob = new Blob([audioData], { type: audioMimeType(track.file_format) });
+      this.preparedNext = { trackId, track, index: nextIndex, blobUrl: URL.createObjectURL(blob) };
     } catch (e) {
       console.error('Prefetch failed:', e);
     } finally {
@@ -650,6 +745,7 @@ export class PlaybackService {
    * Clean up resources.
    */
   destroy(): void {
+    this.clearPreparedNext();
     if (this.currentBlobUrl) {
       URL.revokeObjectURL(this.currentBlobUrl);
     }
