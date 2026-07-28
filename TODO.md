@@ -53,3 +53,9 @@
 
 ## Real-world Readiness
 39. ~~Embed space id in the url to simplify login~~
+
+## Interop
+40. Investigate JSPF playlist format https://www.xspf.org/jspf
+41. ~~Switch to using the SDK's built-in blob encryption/decryption functions - We are currently rolling our own with 16-byte IV's, whereas SDKs use 12 bytes~~
+42. Import reeeductio SDK from npm not local filesystem
+43. ~~Add a `byte_length` field to the Track type~~ - The Apple clients need it (deterministic offset→blob mapping for the resource loader, see doc/APPLE-MEDIA-LAYER.md). Field is now required on Track and populated at import. No backfill needed — there are no production spaces on the old scheme.

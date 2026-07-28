@@ -65,6 +65,13 @@ export interface Track {
   file_format: string;
   /** Bitrate in kbps (e.g., 320) */
   bitrate?: number;
+  /**
+   * Length of the decrypted audio file in bytes. Required by the Apple media
+   * layer's resource loader for the deterministic offset→blob mapping
+   * (see doc/APPLE-MEDIA-LAYER.md). Populated at import from the plaintext
+   * audio bytes.
+   */
+  byte_length: number;
 
   // Encryption keys
   /** Encryption info for audio blob */

@@ -282,6 +282,7 @@ class ImportServiceImpl {
       genres: metadata.genres,
       file_format: metadata.format ?? 'unknown',
       bitrate: metadata.bitrate,
+      byte_length: audioBytes.byteLength,
       encryption: { method: 'file', key: audioKey },
       artwork_encryption: artworkKey ? { method: 'file', key: artworkKey } : undefined,
       added_at: Date.now(),

@@ -1,12 +1,12 @@
 /**
  * Crypto Service
  *
- * Handles encryption, decryption, and PRF-based ID generation
- * for the music player. Uses Web Crypto API directly for
- * application-level encryption (blob DEKs).
+ * Handles PRF-based deterministic ID generation for the music player.
+ * Blob encryption/decryption is handled by the reeeductio SDK
+ * (see MusicSpaceService.uploadAudioBlob / downloadAudioBlob).
  */
 
-import { encodeBase64, decodeBase64 } from 'reeeductio';
+import { encodeBase64 } from 'reeeductio';
 
 const TRACK_ID_SALT = 'reeeductio-music-track-id';
 
@@ -15,7 +15,6 @@ const TRACK_ID_SALT = 'reeeductio-music-track-id';
  *
  * Handles:
  * - PRF-based deterministic ID generation
- * - Blob encryption/decryption with per-blob DEKs
  */
 export class CryptoService {
   private symmetricRoot: Uint8Array;
@@ -118,81 +117,5 @@ export class CryptoService {
     const combined = `${artistName.trim().toLowerCase()}|${albumName.trim().toLowerCase()}`;
     const combinedBytes = new TextEncoder().encode(combined);
     return this.applyPRF(combinedBytes, 'album');
-  }
-
-  // ============================================================
-  // Blob Encryption
-  // ============================================================
-
-  /**
-   * Encrypt a blob with a random DEK.
-   *
-   * Format: [16-byte IV][AES-GCM ciphertext with auth tag]
-   *
-   * @returns encrypted blob and base64-encoded DEK
-   */
-  async encryptBlob(plaintext: Uint8Array): Promise<{ encrypted: Uint8Array; key: string }> {
-    // Generate random 256-bit DEK
-    const dek = crypto.getRandomValues(new Uint8Array(32));
-    const iv = crypto.getRandomValues(new Uint8Array(16));
-
-    // Import DEK as CryptoKey
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      this.toArrayBuffer(dek),
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt']
-    );
-
-    // Encrypt
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: this.toArrayBuffer(iv) },
-      cryptoKey,
-      this.toArrayBuffer(plaintext)
-    );
-
-    // Prepend IV to ciphertext
-    const encrypted = new Uint8Array(16 + ciphertext.byteLength);
-    encrypted.set(iv, 0);
-    encrypted.set(new Uint8Array(ciphertext), 16);
-
-    return {
-      encrypted,
-      key: encodeBase64(dek),
-    };
-  }
-
-  /**
-   * Decrypt a blob using its DEK.
-   *
-   * @param encrypted - Blob in format [16-byte IV][ciphertext]
-   * @param keyBase64 - Base64-encoded DEK
-   */
-  async decryptBlob(encrypted: Uint8Array, keyBase64: string): Promise<Uint8Array> {
-    // Decode DEK
-    const dek = decodeBase64(keyBase64);
-
-    // Extract IV and ciphertext
-    const iv = encrypted.slice(0, 16);
-    const ciphertext = encrypted.slice(16);
-
-    // Import DEK as CryptoKey
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      this.toArrayBuffer(dek),
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
-
-    // Decrypt
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: this.toArrayBuffer(iv) },
-      cryptoKey,
-      this.toArrayBuffer(ciphertext)
-    );
-
-    return new Uint8Array(plaintext);
   }
 }
