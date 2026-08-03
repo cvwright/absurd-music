@@ -383,12 +383,26 @@ export class AlbumView extends LitElement {
         };
       }
 
-      // Load full track data
-      const trackIds = this.album.track_ids.length > 0
-        ? this.album.track_ids
-        : (await this.musicSpace.getSearchIndex()).tracks
-            .filter(t => t.artist === this.album!.artist_name && t.album === this.album!.title)
-            .map(t => t.id);
+      // Build the track list from the union of the album record's track_ids
+      // and the (fresher) search index. The cached Album record can be stale:
+      // when tracks are added to this album — especially on another device —
+      // invalidateIndexCache() refreshes the search index but never the
+      // per-album record, so relying on album.track_ids alone would hide the
+      // newly added tracks. The index is cache-first, so this adds no network
+      // round-trip on the common path.
+      const trackIdSet = new Set(this.album.track_ids);
+      try {
+        const index = await this.musicSpace.getSearchIndex();
+        for (const t of index.tracks) {
+          if (t.artist === this.album.artist_name && t.album === this.album.title) {
+            trackIdSet.add(t.id);
+          }
+        }
+      } catch {
+        // No search index available (e.g. offline first run) — fall back to
+        // whatever the album record already lists.
+      }
+      const trackIds = Array.from(trackIdSet);
 
       this.tracks = await Promise.all(
         trackIds.map(id => this.musicSpace!.getTrack(id))
