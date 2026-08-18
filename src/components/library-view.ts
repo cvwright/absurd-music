@@ -46,7 +46,7 @@ export class LibraryView extends LitElement {
       flex-direction: column;
       height: 100%;
       overflow: hidden;
-      padding: var(--spacing-lg) var(--spacing-md);
+      padding: var(--spacing-lg) var(--spacing-sm);
     }
 
     .header {
@@ -324,7 +324,7 @@ export class LibraryView extends LitElement {
 
     @media (max-width: 480px) {
       :host {
-        padding-top: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-xs);
       }
 
       .header-row {
