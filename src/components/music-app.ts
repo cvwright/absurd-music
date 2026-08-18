@@ -283,11 +283,8 @@ export class MusicApp extends LitElement {
         await this.musicSpace.authenticate();
       }
 
-      // Invalidate cached indexes so views get fresh data from server
-      this.musicSpace.invalidateIndexCache();
-
-      // Refresh sidebar playlists
-      await this.loadPlaylists();
+      // Keep showing cached indexes; refresh them from the server in place.
+      await this.loadPlaylists({ bypassCache: true });
 
       // Re-warm metadata in case the library changed while we were away.
       this.warmMetadataCache();
@@ -390,9 +387,9 @@ export class MusicApp extends LitElement {
     this.musicSpace.warmMetadataCache().catch(() => {});
   }
 
-  private async loadPlaylists() {
+  private async loadPlaylists(options?: { bypassCache?: boolean }) {
     if (!this.playlistService) return;
-    this.playlists = await this.playlistService.listPlaylists();
+    this.playlists = await this.playlistService.listPlaylists(options);
   }
 
   render() {

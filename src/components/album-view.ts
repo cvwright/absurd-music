@@ -386,10 +386,10 @@ export class AlbumView extends LitElement {
       // Build the track list from the union of the album record's track_ids
       // and the (fresher) search index. The cached Album record can be stale:
       // when tracks are added to this album — especially on another device —
-      // invalidateIndexCache() refreshes the search index but never the
-      // per-album record, so relying on album.track_ids alone would hide the
-      // newly added tracks. The index is cache-first, so this adds no network
-      // round-trip on the common path.
+      // a refreshed search index never updates the per-album record, so
+      // relying on album.track_ids alone would hide the newly added tracks.
+      // The index is cache-first, so this adds no network round-trip on the
+      // common path.
       const trackIdSet = new Set(this.album.track_ids);
       try {
         const index = await this.musicSpace.getSearchIndex();

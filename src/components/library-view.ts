@@ -499,6 +499,10 @@ export class LibraryView extends LitElement {
   /** Cache of artwork object URLs by blob ID (shared across tracks on same album) */
   private artworkUrls = new Map<string, string>();
 
+  /** Bumped to cancel an in-flight load/hydrate when a newer one starts. */
+  private loadGeneration = 0;
+  private hydrateGeneration = 0;
+
   override connectedCallback() {
     super.connectedCallback();
     this.loadLibrary();
@@ -508,6 +512,8 @@ export class LibraryView extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this.loadGeneration++;
+    this.hydrateGeneration++;
     document.removeEventListener('click', this.handleClickOutside);
     // Revoke object URLs to free memory
     for (const url of this.artworkUrls.values()) {
@@ -543,115 +549,200 @@ export class LibraryView extends LitElement {
     }
   }
 
-  /** Bypass the cache and reload the library directly from the server. */
+  /** Reload from the server without dropping the on-screen list first. */
   private async refreshLibrary() {
     if (!this.musicSpace || this.refreshing) return;
     this.refreshing = true;
     try {
-      this.musicSpace.invalidateIndexCache();
       await this.loadLibrary();
     } finally {
       this.refreshing = false;
     }
   }
 
-  /** Load library data from the search index. */
+  /**
+   * Paint from the cached index immediately, then revalidate against the
+   * server and hydrate per-track metadata (artwork, genres) in the background.
+   */
   private async loadLibrary() {
     if (!this.musicSpace) {
       return;
     }
 
-    try {
+    const gen = ++this.loadGeneration;
+    const cached = await this.musicSpace.getCachedSearchIndex();
+    if (gen !== this.loadGeneration) return;
+
+    if (cached) {
+      this.applyIndex(cached);
+      this.loading = false;
+      void this.rebuildCollections(gen);
+      void this.hydrateTracks(cached, gen);
+    } else if (this.tracks.length === 0) {
       this.loading = true;
-      const index: SearchIndex = await this.musicSpace.getSearchIndex();
-      this.isEmpty = index.tracks.length === 0;
+    }
 
-      // Fetch full track data to get artwork info
-      const trackEntries: TrackEntry[] = await Promise.all(
-        index.tracks.map(async (t) => {
-          try {
-            const fullTrack: Track = await this.musicSpace!.getTrack(t.id);
-            return {
-              id: t.id,
-              title: (fullTrack.title || t.title).trim(),
-              artist: (fullTrack.artist_name || t.artist).trim(),
-              album: (fullTrack.album_name || t.album).trim(),
-              duration_ms: t.duration_ms,
-              genres: fullTrack.genres,
-              artwork_blob_id: fullTrack.artwork_blob_id,
-              artwork_blob_key: fullTrack.artwork_encryption?.key,
-              artwork_mime_type: fullTrack.artwork_mime_type,
-              file_format: fullTrack.file_format,
-            };
-          } catch {
-            // Fall back to index data if track fetch fails
-            return {
-              id: t.id,
-              title: t.title.trim(),
-              artist: t.artist.trim(),
-              album: t.album.trim(),
-              duration_ms: t.duration_ms,
-              genres: [],
-            };
-          }
-        })
-      );
-      this.tracks = trackEntries;
-
-      // Build albums and artists from track data
-      const albumMap = new Map<string, { title: string; artist: string }>();
-      const artistMap = new Map<string, string>();
-
-      for (const track of this.tracks) {
-        const albumKey = `${track.artist}|${track.album}`;
-        if (!albumMap.has(albumKey)) {
-          albumMap.set(albumKey, { title: track.album, artist: track.artist });
-        }
-        if (!artistMap.has(track.artist)) {
-          artistMap.set(track.artist, track.artist);
-        }
+    if (this.offline) {
+      if (!cached) {
+        this.isEmpty = true;
+        this.tracks = [];
+        this.albums = [];
+        this.artists = [];
+        this.loading = false;
       }
+      return;
+    }
 
-      // Fetch actual album records where they exist, falling back to synthetic albums
-      const albumEntries = Array.from(albumMap.entries());
-      this.albums = await Promise.all(
-        albumEntries.map(async ([_key, val]) => {
-          const albumId = await this.musicSpace!.generateAlbumId(val.artist, val.title);
-          try {
-            return await this.musicSpace!.getAlbum(albumId);
-          } catch {
-            const artistId = await this.musicSpace!.generateArtistId(val.artist);
-            // Album record doesn't exist, return synthetic album
-            return {
-              album_id: albumId,
-              title: val.title,
-              artist_id: artistId,
-              artist_name: val.artist,
-              genres: [],
-              track_ids: [],
-            };
-          }
-        })
-      );
-
-      this.artists = await Promise.all(
-        Array.from(artistMap.keys()).map(async name => ({
-          artist_id: await this.musicSpace!.generateArtistId(name),
-          name,
-          album_ids: [],
-        }))
-      );
-
+    try {
+      const fresh = await this.musicSpace.getSearchIndex({ bypassCache: true });
+      if (gen !== this.loadGeneration) return;
+      if (!cached || fresh.last_updated !== cached.last_updated) {
+        this.applyIndex(fresh);
+        void this.rebuildCollections(gen);
+      }
+      this.loading = false;
+      void this.hydrateTracks(fresh, gen);
     } catch (_err) {
-      // Index doesn't exist yet (empty library)
-      console.log('No library index found, library is empty');
-      this.isEmpty = true;
-      this.tracks = [];
-      this.albums = [];
-      this.artists = [];
-    } finally {
+      if (gen !== this.loadGeneration) return;
+      if (!cached) {
+        console.log('No library index found, library is empty');
+        this.isEmpty = true;
+        this.tracks = [];
+        this.albums = [];
+        this.artists = [];
+      }
       this.loading = false;
     }
+  }
+
+  /** Render tracks from the lightweight search index (no per-track fetches). */
+  private applyIndex(index: SearchIndex) {
+    const prevById = new Map(this.tracks.map(t => [t.id, t]));
+    this.tracks = index.tracks.map(t => {
+      const prev = prevById.get(t.id);
+      return {
+        id: t.id,
+        title: t.title.trim(),
+        artist: t.artist.trim(),
+        album: t.album.trim(),
+        duration_ms: t.duration_ms,
+        genres: prev?.genres ?? [],
+        artwork_blob_id: prev?.artwork_blob_id,
+        artwork_blob_key: prev?.artwork_blob_key,
+        artwork_mime_type: prev?.artwork_mime_type,
+        file_format: prev?.file_format,
+      };
+    });
+    this.isEmpty = this.tracks.length === 0;
+  }
+
+  /** Build album/artist collections. Does not block the songs list. */
+  private async rebuildCollections(gen: number) {
+    if (!this.musicSpace) return;
+
+    const albumMap = new Map<string, { title: string; artist: string }>();
+    const artistMap = new Map<string, string>();
+    for (const track of this.tracks) {
+      const albumKey = `${track.artist}|${track.album}`;
+      if (!albumMap.has(albumKey)) {
+        albumMap.set(albumKey, { title: track.album, artist: track.artist });
+      }
+      if (!artistMap.has(track.artist)) {
+        artistMap.set(track.artist, track.artist);
+      }
+    }
+
+    const albumEntries = Array.from(albumMap.entries());
+    const albums = await Promise.all(
+      albumEntries.map(async ([_key, val]) => {
+        const albumId = await this.musicSpace!.generateAlbumId(val.artist, val.title);
+        try {
+          return await this.musicSpace!.getAlbum(albumId);
+        } catch {
+          const artistId = await this.musicSpace!.generateArtistId(val.artist);
+          return {
+            album_id: albumId,
+            title: val.title,
+            artist_id: artistId,
+            artist_name: val.artist,
+            genres: [],
+            track_ids: [],
+          };
+        }
+      })
+    );
+    if (gen !== this.loadGeneration) return;
+    this.albums = albums;
+
+    const artists = await Promise.all(
+      Array.from(artistMap.keys()).map(async name => ({
+        artist_id: await this.musicSpace!.generateArtistId(name),
+        name,
+        album_ids: [],
+      }))
+    );
+    if (gen !== this.loadGeneration) return;
+    this.artists = artists;
+  }
+
+  /**
+   * Fill in artwork keys, genres, and canonical titles from full track
+   * records. Cache-first; bounded concurrency so a cold cache does not
+   * open thousands of connections at once.
+   */
+  private async hydrateTracks(index: SearchIndex, gen: number) {
+    if (!this.musicSpace) return;
+    const hydrateGen = ++this.hydrateGeneration;
+
+    const CONCURRENCY = 6;
+    const BATCH = 24;
+    let cursor = 0;
+    const pending = new Map<string, Track>();
+
+    const stillCurrent = () =>
+      gen === this.loadGeneration && hydrateGen === this.hydrateGeneration;
+
+    const flush = () => {
+      if (pending.size === 0) return;
+      this.tracks = this.tracks.map(t => {
+        const full = pending.get(t.id);
+        return full ? this.mergeHydratedTrack(t, full) : t;
+      });
+      pending.clear();
+    };
+
+    const worker = async () => {
+      while (cursor < index.tracks.length) {
+        if (!stillCurrent()) return;
+        const t = index.tracks[cursor++];
+        try {
+          const full = await this.musicSpace!.getTrack(t.id);
+          if (!stillCurrent()) return;
+          pending.set(t.id, full);
+        } catch {
+          // Keep the index row (offline miss, deleted track, etc.)
+        }
+        if (pending.size >= BATCH) flush();
+      }
+    };
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+    if (!stillCurrent()) return;
+    flush();
+  }
+
+  private mergeHydratedTrack(prev: TrackEntry, full: Track): TrackEntry {
+    return {
+      ...prev,
+      title: (full.title || prev.title).trim(),
+      artist: (full.artist_name || prev.artist).trim(),
+      album: (full.album_name || prev.album).trim(),
+      genres: full.genres,
+      artwork_blob_id: full.artwork_blob_id,
+      artwork_blob_key: full.artwork_encryption?.key,
+      artwork_mime_type: full.artwork_mime_type,
+      file_format: full.file_format,
+    };
   }
 
   render() {

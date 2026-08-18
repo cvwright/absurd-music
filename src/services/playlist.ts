@@ -120,8 +120,8 @@ export class PlaylistService {
   /**
    * Get all playlists (lightweight index entries).
    */
-  async listPlaylists(): Promise<PlaylistIndexEntry[]> {
-    const index = await this.musicSpace.getPlaylistIndex();
+  async listPlaylists(options?: { bypassCache?: boolean }): Promise<PlaylistIndexEntry[]> {
+    const index = await this.musicSpace.getPlaylistIndex(options);
     return index.playlists;
   }
 
