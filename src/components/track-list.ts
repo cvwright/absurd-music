@@ -17,6 +17,13 @@ export class TrackList extends LitElement {
       display: block;
     }
 
+    /* Opt-in: own the scroll container instead of scrolling with an ancestor.
+       Use when a pinned header/toolbar must stay in place above the list. */
+    :host([scrollable]) {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
 .track-item {
       display: grid;
       grid-template-columns: var(--grid-columns);
@@ -257,6 +264,14 @@ export class TrackList extends LitElement {
   /** Whether to show the album column */
   @property({ type: Boolean, reflect: true, attribute: 'show-album' })
   showAlbum = false;
+
+  /**
+   * Whether this list is its own scroll container. When false (the default) the
+   * virtualizer scrolls with the nearest scrolling ancestor, so any page header
+   * above it scrolls away with the list.
+   */
+  @property({ type: Boolean, reflect: true })
+  scrollable = false;
 
   /** Set of track IDs that are downloaded/cached. Shows a downloaded indicator. */
   @property({ attribute: false })

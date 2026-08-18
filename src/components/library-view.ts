@@ -161,10 +161,11 @@ export class LibraryView extends LitElement {
       cursor: not-allowed;
     }
 
+    /* Scrolling is owned by track-list itself (via its scrollable attribute)
+       so the heading, tabs, and filter controls stay pinned above the list. */
     track-list {
       flex: 1;
       min-height: 0;
-      overflow-y: auto;
     }
 
     /* Album grid */
@@ -955,6 +956,7 @@ export class LibraryView extends LitElement {
         .downloadingIds=${this.cacheService?.downloadingTrackIds ?? new Set()}
         show-artwork
         show-album
+        scrollable
         .actionRenderer=${this.renderTrackAction}
         @track-click=${this.handleTrackListClick}
       ></track-list>
