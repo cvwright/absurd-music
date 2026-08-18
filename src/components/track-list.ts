@@ -302,10 +302,15 @@ export class TrackList extends LitElement {
     return html`
       <lit-virtualizer
         .items=${this.items}
-        .renderItem=${(item: TrackListItem, index: number) => this.renderTrackItem(item, index)}
+        .keyFunction=${this.itemKey}
+        .renderItem=${this.renderItem}
       ></lit-virtualizer>
     `;
   }
+
+  private itemKey = (item: TrackListItem) => item.id;
+
+  private renderItem = (item: TrackListItem, index: number) => this.renderTrackItem(item, index);
 
   private renderTrackItem(item: TrackListItem, index: number) {
     return html`
