@@ -153,15 +153,6 @@ export class MusicSpaceService {
     return this.space.getUserId();
   }
 
-  /**
-   * Invalidate cached index entries so they're re-fetched from the server.
-   * Call after reconnecting to ensure fresh data.
-   */
-  invalidateIndexCache(): void {
-    this.cacheRemove('library/index');
-    this.cacheRemove(`user/${this.userId}/playlist_index`);
-  }
-
   // ============================================================
   // Library Operations
   // ============================================================
@@ -226,7 +217,10 @@ export class MusicSpaceService {
   async warmMetadataCache(): Promise<void> {
     if (!this.cache) return;
 
-    const index = await this.getSearchIndex();
+    // Revalidate against the server: warming from a stale cached index would
+    // silently skip records added on another device, and the marker check
+    // below would then mark that stale version as fully warmed.
+    const index = await this.getSearchIndex({ bypassCache: true });
 
     // Skip if we already fully warmed this exact index version.
     try {
@@ -238,7 +232,7 @@ export class MusicSpaceService {
     const albums = new Map<string, { artist: string; album: string }>();
     const artists = new Set<string>();
     for (const t of index.tracks) {
-      albums.set(`${t.artist} ${t.album}`, { artist: t.artist, album: t.album });
+      albums.set(`${t.artist}\u0000${t.album}`, { artist: t.artist, album: t.album });
       artists.add(t.artist);
     }
 
@@ -277,9 +271,28 @@ export class MusicSpaceService {
   }
 
   /**
+   * In-flight `getTrack` requests, keyed by track ID. The library view's
+   * hydration pass and the background warm pass both walk the whole library,
+   * so without this they would fetch every track twice on a cold cache.
+   */
+  private trackFetches = new Map<string, Promise<Track>>();
+
+  /**
    * Get track metadata by ID.
    */
   async getTrack(trackId: string): Promise<Track> {
+    const existing = this.trackFetches.get(trackId);
+    if (existing) return existing;
+    const fetch = this.fetchTrack(trackId);
+    this.trackFetches.set(trackId, fetch);
+    try {
+      return await fetch;
+    } finally {
+      this.trackFetches.delete(trackId);
+    }
+  }
+
+  private async fetchTrack(trackId: string): Promise<Track> {
     const key = `library/tracks/${trackId}`;
     try {
       if (this.cache) {
@@ -507,6 +520,13 @@ export class MusicSpaceService {
     try {
       return await this.getUserData<PlaylistIndex>('playlist_index', !options?.bypassCache);
     } catch {
+      // A failed revalidation must not drop playlists the cache still holds:
+      // the online event fires before the connection is reliably usable.
+      if (options?.bypassCache) {
+        try {
+          return await this.getUserData<PlaylistIndex>('playlist_index');
+        } catch { /* no cached copy either */ }
+      }
       return { playlists: [], updated_at: Date.now() };
     }
   }

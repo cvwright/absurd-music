@@ -25,6 +25,15 @@ function compareText(a: string, b: string): number {
   });
 }
 
+/**
+ * Grouping key for an album. Mirrors the trim + lowercase normalization in
+ * CryptoService.generateAlbumId, so tracks and stored Album records that
+ * differ only in case or whitespace still resolve to the same album.
+ */
+function albumKey(artist: string, title: string): string {
+  return `${artist.trim().toLowerCase()}|${title.trim().toLowerCase()}`;
+}
+
 interface TrackEntry {
   id: string;
   title: string;
@@ -503,6 +512,13 @@ export class LibraryView extends LitElement {
   private loadGeneration = 0;
   private hydrateGeneration = 0;
 
+  /** The service instance the current track list was loaded from. */
+  private loadedSpace: MusicSpaceService | null = null;
+
+  /** albumKey -> first track carrying artwork, rebuilt when `tracks` changes. */
+  private artworkTrackByAlbum = new Map<string, TrackEntry>();
+  private artworkTrackSource: TrackEntry[] | null = null;
+
   override connectedCallback() {
     super.connectedCallback();
     this.loadLibrary();
@@ -534,7 +550,9 @@ export class LibraryView extends LitElement {
   }
 
   override updated(changedProperties: Map<string, unknown>) {
-    if (changedProperties.has('musicSpace') && this.musicSpace) {
+    // connectedCallback already loads when the service is set up front; only
+    // reload here if we are actually looking at a different space.
+    if (changedProperties.has('musicSpace') && this.musicSpace && this.musicSpace !== this.loadedSpace) {
       this.loadLibrary();
     }
     if (changedProperties.has('initialTab') && this.initialTab) {
@@ -569,6 +587,7 @@ export class LibraryView extends LitElement {
       return;
     }
 
+    this.loadedSpace = this.musicSpace;
     const gen = ++this.loadGeneration;
     const cached = await this.musicSpace.getCachedSearchIndex();
     if (gen !== this.loadGeneration) return;
@@ -599,9 +618,12 @@ export class LibraryView extends LitElement {
       if (!cached || fresh.last_updated !== cached.last_updated) {
         this.applyIndex(fresh);
         void this.rebuildCollections(gen);
+        // Only restart hydration when the index actually moved. Restarting it
+        // unconditionally would cancel the cached pass mid-flight, discard its
+        // pending batch, and re-read every track record from scratch.
+        void this.hydrateTracks(fresh, gen);
       }
       this.loading = false;
-      void this.hydrateTracks(fresh, gen);
     } catch (_err) {
       if (gen !== this.loadGeneration) return;
       if (!cached) {
@@ -643,9 +665,9 @@ export class LibraryView extends LitElement {
     const albumMap = new Map<string, { title: string; artist: string }>();
     const artistMap = new Map<string, string>();
     for (const track of this.tracks) {
-      const albumKey = `${track.artist}|${track.album}`;
-      if (!albumMap.has(albumKey)) {
-        albumMap.set(albumKey, { title: track.album, artist: track.artist });
+      const key = albumKey(track.artist, track.album);
+      if (!albumMap.has(key)) {
+        albumMap.set(key, { title: track.album, artist: track.artist });
       }
       if (!artistMap.has(track.artist)) {
         artistMap.set(track.artist, track.artist);
@@ -737,7 +759,7 @@ export class LibraryView extends LitElement {
       title: (full.title || prev.title).trim(),
       artist: (full.artist_name || prev.artist).trim(),
       album: (full.album_name || prev.album).trim(),
-      genres: full.genres,
+      genres: full.genres ?? [],
       artwork_blob_id: full.artwork_blob_id,
       artwork_blob_key: full.artwork_encryption?.key,
       artwork_mime_type: full.artwork_mime_type,
@@ -959,12 +981,12 @@ export class LibraryView extends LitElement {
 
     // Filter by genres: include album if any of its tracks match
     if (this.genreFilter) {
-      const albumKeysWithGenre = new Set(
+      const albumsWithGenre = new Set(
         this.tracks
           .filter(t => t.genres.includes(this.genreFilter))
-          .map(t => `${t.artist}|${t.album}`)
+          .map(t => albumKey(t.artist, t.album))
       );
-      filtered = filtered.filter(a => albumKeysWithGenre.has(a.album_id));
+      filtered = filtered.filter(a => albumsWithGenre.has(albumKey(a.artist_name, a.title)));
     }
 
     // Filter by text
@@ -1349,12 +1371,35 @@ export class LibraryView extends LitElement {
       return undefined;
     }
 
-    // Fall back to track artwork
-    const track = this.tracks.find(t => `${t.artist}|${t.album}` === album.album_id);
+    // Fall back to a track on this album. Match on normalized artist+title —
+    // album_id is a PRF, not the raw "artist|album" string used for grouping,
+    // and a stored Album record's strings need not match the track's exactly.
+    const track = this.artworkTrackFor(album);
     if (track?.artwork_blob_id) {
-      return this.artworkUrls.get(track.artwork_blob_id);
+      const url = this.artworkUrls.get(track.artwork_blob_id);
+      if (url) return url;
+      this.loadArtwork(track);
     }
     return undefined;
+  }
+
+  /**
+   * Find a track on this album that carries artwork. Runs once per render for
+   * every album card, so it goes through a map keyed by album rather than
+   * scanning the whole track list each time.
+   */
+  private artworkTrackFor(album: Album): TrackEntry | undefined {
+    if (this.artworkTrackSource !== this.tracks) {
+      const byAlbum = new Map<string, TrackEntry>();
+      for (const t of this.tracks) {
+        if (!t.artwork_blob_id) continue;
+        const key = albumKey(t.artist, t.album);
+        if (!byAlbum.has(key)) byAlbum.set(key, t);
+      }
+      this.artworkTrackByAlbum = byAlbum;
+      this.artworkTrackSource = this.tracks;
+    }
+    return this.artworkTrackByAlbum.get(albumKey(album.artist_name, album.title));
   }
 
   /** Load artwork for an album (if it has its own artwork). */
