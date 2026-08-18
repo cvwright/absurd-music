@@ -123,9 +123,9 @@ class ImportServiceImpl {
 
     return {
       file,
-      title: common.title ?? this.titleFromFilename(file.name),
-      artist: common.artist,
-      album: common.album,
+      title: (common.title ?? this.titleFromFilename(file.name)).trim(),
+      artist: common.artist?.trim(),
+      album: common.album?.trim(),
       year: common.year,
       trackNumber: common.track.no ?? undefined,
       trackTotal: common.track.of ?? undefined,
@@ -152,7 +152,7 @@ class ImportServiceImpl {
    * Extracts a title from filename (removes extension).
    */
   private titleFromFilename(filename: string): string {
-    return filename.replace(/\.[^.]+$/, '');
+    return filename.replace(/\.[^.]+$/, '').trim();
   }
 
   /**

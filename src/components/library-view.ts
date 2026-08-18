@@ -17,6 +17,14 @@ type Tab = 'songs' | 'albums' | 'artists' | 'playlists';
 type SortField = 'title' | 'artist' | 'album' | 'duration';
 type SortDirection = 'asc' | 'desc';
 
+/** Compare tags as the user sees them, not as raw ID3 bytes. */
+function compareText(a: string, b: string): number {
+  return a.trim().localeCompare(b.trim(), undefined, {
+    sensitivity: 'base',
+    numeric: true,
+  });
+}
+
 interface TrackEntry {
   id: string;
   title: string;
@@ -564,9 +572,9 @@ export class LibraryView extends LitElement {
             const fullTrack: Track = await this.musicSpace!.getTrack(t.id);
             return {
               id: t.id,
-              title: t.title,
-              artist: t.artist,
-              album: t.album,
+              title: (fullTrack.title || t.title).trim(),
+              artist: (fullTrack.artist_name || t.artist).trim(),
+              album: (fullTrack.album_name || t.album).trim(),
               duration_ms: t.duration_ms,
               genres: fullTrack.genres,
               artwork_blob_id: fullTrack.artwork_blob_id,
@@ -578,9 +586,9 @@ export class LibraryView extends LitElement {
             // Fall back to index data if track fetch fails
             return {
               id: t.id,
-              title: t.title,
-              artist: t.artist,
-              album: t.album,
+              title: t.title.trim(),
+              artist: t.artist.trim(),
+              album: t.album.trim(),
               duration_ms: t.duration_ms,
               genres: [],
             };
@@ -830,18 +838,19 @@ export class LibraryView extends LitElement {
       );
     }
 
-    // Sort
+    // Sort. Trim so leading/trailing spaces in ID3 titles don't win the
+    // comparison (U+0020 sorts before any letter).
     const sorted = [...filtered].sort((a, b) => {
       let cmp = 0;
       switch (this.sortField) {
         case 'title':
-          cmp = a.title.localeCompare(b.title);
+          cmp = compareText(a.title, b.title);
           break;
         case 'artist':
-          cmp = a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
+          cmp = compareText(a.artist, b.artist) || compareText(a.title, b.title);
           break;
         case 'album':
-          cmp = a.album.localeCompare(b.album) || a.title.localeCompare(b.title);
+          cmp = compareText(a.album, b.album) || compareText(a.title, b.title);
           break;
         case 'duration':
           cmp = a.duration_ms - b.duration_ms;
@@ -877,14 +886,14 @@ export class LibraryView extends LitElement {
 
     // Sort
     const sorted = [...filtered].sort((a, b) => {
-      let cmp = a.title.localeCompare(b.title);
+      let cmp = compareText(a.title, b.title);
       switch (this.sortField) {
         case 'title':
         case 'album':
-          cmp = a.title.localeCompare(b.title);
+          cmp = compareText(a.title, b.title);
           break;
         case 'artist':
-          cmp = a.artist_name.localeCompare(b.artist_name) || a.title.localeCompare(b.title);
+          cmp = compareText(a.artist_name, b.artist_name) || compareText(a.title, b.title);
           break;
       }
       return this.sortDirection === 'asc' ? cmp : -cmp;
@@ -914,7 +923,7 @@ export class LibraryView extends LitElement {
 
     // Sort by name
     const sorted = [...filtered].sort((a, b) => {
-      const cmp = a.name.localeCompare(b.name);
+      const cmp = compareText(a.name, b.name);
       return this.sortDirection === 'asc' ? cmp : -cmp;
     });
 
@@ -1314,7 +1323,7 @@ export class LibraryView extends LitElement {
     }
 
     const sorted = [...filtered].sort((a, b) => {
-      const cmp = a.name.localeCompare(b.name);
+      const cmp = compareText(a.name, b.name);
       return this.sortDirection === 'asc' ? cmp : -cmp;
     });
 
