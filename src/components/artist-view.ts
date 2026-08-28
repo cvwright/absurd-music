@@ -6,8 +6,8 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { MusicSpaceService, CacheService, safeImageMimeType } from '@/services/index.js';
-import type { Artist, Album, Track, SearchIndex } from '@/types/index.js';
+import { MusicSpaceService, CacheService, safeImageMimeType, albumGroupKey } from '@/services/index.js';
+import type { Artist, Album, Track, SearchIndex, SearchIndexTrack } from '@/types/index.js';
 
 interface AlbumWithArtwork extends Album {
   artworkUrl?: string;
@@ -320,6 +320,17 @@ export class ArtistView extends LitElement {
     this.artworkUrls.clear();
   }
 
+  /**
+   * The index entries belonging to this artist, matched on artist ID.
+   *
+   * Entries carry their own artist_id, so this is a plain comparison — no
+   * name is ever tested against an ID, and nothing has to be inverted.
+   */
+  private async artistEntries(index: SearchIndex): Promise<SearchIndexTrack[]> {
+    const ids = await Promise.all(index.tracks.map(t => this.musicSpace!.entryArtistId(t)));
+    return index.tracks.filter((_t, i) => ids[i] === this.artistId);
+  }
+
   private async loadArtist() {
     if (!this.musicSpace || !this.artistId) return;
 
@@ -329,34 +340,35 @@ export class ArtistView extends LitElement {
     try {
       const index: SearchIndex = await this.musicSpace.getSearchIndex();
 
+      const artistTracks = await this.artistEntries(index);
+
       // Try to load artist metadata directly
       try {
         this.artist = await this.musicSpace.getArtist(this.artistId);
       } catch {
-        // Artist object may not exist, build from search index
-        const artistTracks = index.tracks.filter(t => t.artist === this.artistId);
-
+        // Artist object may not exist — take the display name from the
+        // artist's own tracks, which we just matched by ID.
         if (artistTracks.length === 0) {
           throw new Error('Artist not found');
         }
 
         this.artist = {
           artist_id: this.artistId,
-          name: this.artistId,
+          name: artistTracks[0].artist,
           album_ids: [],
         };
       }
 
-      // Build albums list from tracks
-      const artistTracks = index.tracks.filter(t => t.artist === this.artist!.name);
+      // Group this artist's tracks into albums, keyed the same way the album
+      // PRF normalizes its input so a card maps 1:1 onto an album_id.
       const albumMap = new Map<string, { title: string; year?: number; trackIds: string[] }>();
 
       for (const track of artistTracks) {
-        const albumKey = `${this.artist!.name}|${track.album}`;
-        if (!albumMap.has(albumKey)) {
-          albumMap.set(albumKey, { title: track.album, trackIds: [] });
+        const key = albumGroupKey(track.artist, track.album);
+        if (!albumMap.has(key)) {
+          albumMap.set(key, { title: track.album, trackIds: [] });
         }
-        albumMap.get(albumKey)!.trackIds.push(track.id);
+        albumMap.get(key)!.trackIds.push(track.id);
       }
 
       // Try to get full album data for year info
@@ -534,7 +546,7 @@ export class ArtistView extends LitElement {
           <h2 class="section-title">Discography</h2>
           <div class="album-grid">
             ${this.albums.map(album => html`
-              <div class="album-card" @click=${() => this.goToAlbum(album.album_id)}>
+              <div class="album-card" @click=${() => this.goToAlbum(album)}>
                 <div class="album-artwork">
                   ${this.artworkUrls.get(album.album_id)
                     ? html`<img src=${this.artworkUrls.get(album.album_id)!} alt="" />`
@@ -565,9 +577,9 @@ export class ArtistView extends LitElement {
     }));
   }
 
-  private goToAlbum(albumId: string) {
+  private goToAlbum(album: Album) {
     this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { view: 'album', params: { id: albumId } },
+      detail: { view: 'album', params: { id: album.album_id } },
       bubbles: true,
       composed: true,
     }));

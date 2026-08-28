@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { ImportService, MusicSpaceService, CacheService, safeImageMimeType } from '@/services/index.js';
+import { ImportService, MusicSpaceService, CacheService, safeImageMimeType, normalizeName, albumGroupKey } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry, TrackListItem } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
@@ -23,15 +23,6 @@ function compareText(a: string, b: string): number {
     sensitivity: 'base',
     numeric: true,
   });
-}
-
-/**
- * Grouping key for an album. Mirrors the trim + lowercase normalization in
- * CryptoService.generateAlbumId, so tracks and stored Album records that
- * differ only in case or whitespace still resolve to the same album.
- */
-function albumKey(artist: string, title: string): string {
-  return `${artist.trim().toLowerCase()}|${title.trim().toLowerCase()}`;
 }
 
 interface TrackEntry {
@@ -515,7 +506,7 @@ export class LibraryView extends LitElement {
   /** The service instance the current track list was loaded from. */
   private loadedSpace: MusicSpaceService | null = null;
 
-  /** albumKey -> first track carrying artwork, rebuilt when `tracks` changes. */
+  /** albumGroupKey -> first track carrying artwork, rebuilt when `tracks` changes. */
   private artworkTrackByAlbum = new Map<string, TrackEntry>();
   private artworkTrackSource: TrackEntry[] | null = null;
 
@@ -665,12 +656,13 @@ export class LibraryView extends LitElement {
     const albumMap = new Map<string, { title: string; artist: string }>();
     const artistMap = new Map<string, string>();
     for (const track of this.tracks) {
-      const key = albumKey(track.artist, track.album);
+      const key = albumGroupKey(track.artist, track.album);
       if (!albumMap.has(key)) {
         albumMap.set(key, { title: track.album, artist: track.artist });
       }
-      if (!artistMap.has(track.artist)) {
-        artistMap.set(track.artist, track.artist);
+      const artistKey = normalizeName(track.artist);
+      if (!artistMap.has(artistKey)) {
+        artistMap.set(artistKey, track.artist);
       }
     }
 
@@ -697,7 +689,7 @@ export class LibraryView extends LitElement {
     this.albums = albums;
 
     const artists = await Promise.all(
-      Array.from(artistMap.keys()).map(async name => ({
+      Array.from(artistMap.values()).map(async name => ({
         artist_id: await this.musicSpace!.generateArtistId(name),
         name,
         album_ids: [],
@@ -984,9 +976,9 @@ export class LibraryView extends LitElement {
       const albumsWithGenre = new Set(
         this.tracks
           .filter(t => t.genres.includes(this.genreFilter))
-          .map(t => albumKey(t.artist, t.album))
+          .map(t => albumGroupKey(t.artist, t.album))
       );
-      filtered = filtered.filter(a => albumsWithGenre.has(albumKey(a.artist_name, a.title)));
+      filtered = filtered.filter(a => albumsWithGenre.has(albumGroupKey(a.artist_name, a.title)));
     }
 
     // Filter by text
@@ -1348,7 +1340,7 @@ export class LibraryView extends LitElement {
         ${albums.map(album => {
           const artworkUrl = this.getAlbumArtworkUrl(album);
           return html`
-            <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
+            <div class="album-card" @click=${() => this.navigateToAlbum(album)}>
               <div class="album-artwork">
                 ${artworkUrl ? html`<img src=${artworkUrl} alt="" />` : ''}
               </div>
@@ -1393,13 +1385,13 @@ export class LibraryView extends LitElement {
       const byAlbum = new Map<string, TrackEntry>();
       for (const t of this.tracks) {
         if (!t.artwork_blob_id) continue;
-        const key = albumKey(t.artist, t.album);
+        const key = albumGroupKey(t.artist, t.album);
         if (!byAlbum.has(key)) byAlbum.set(key, t);
       }
       this.artworkTrackByAlbum = byAlbum;
       this.artworkTrackSource = this.tracks;
     }
-    return this.artworkTrackByAlbum.get(albumKey(album.artist_name, album.title));
+    return this.artworkTrackByAlbum.get(albumGroupKey(album.artist_name, album.title));
   }
 
   /** Load artwork for an album (if it has its own artwork). */
@@ -1422,9 +1414,9 @@ export class LibraryView extends LitElement {
     this.loadArtworkAsync(blobId, blobKey, mimeType);
   }
 
-  private navigateToAlbum(albumId: string) {
+  private navigateToAlbum(album: Album) {
     this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { view: 'album', params: { id: albumId } },
+      detail: { view: 'album', params: { id: album.album_id } },
       bubbles: true,
       composed: true,
     }));
@@ -1438,7 +1430,7 @@ export class LibraryView extends LitElement {
     return html`
       <div class="album-grid">
         ${artists.map(artist => html`
-          <div class="album-card" @click=${() => this.navigateToArtist(artist.artist_id)}>
+          <div class="album-card" @click=${() => this.navigateToArtist(artist)}>
             <div class="album-artwork artist-avatar">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -1498,9 +1490,9 @@ export class LibraryView extends LitElement {
     }));
   }
 
-  private navigateToArtist(artistId: string) {
+  private navigateToArtist(artist: Artist) {
     this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { view: 'artist', params: { id: artistId } },
+      detail: { view: 'artist', params: { id: artist.artist_id } },
       bubbles: true,
       composed: true,
     }));

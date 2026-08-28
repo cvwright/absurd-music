@@ -9,7 +9,7 @@ import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MusicSpaceService, CacheService, ImportService, safeImageMimeType } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
-import type { Album, Track, TrackListItem } from '@/types/index.js';
+import type { Album, Track, TrackListItem, SearchIndex, SearchIndexTrack } from '@/types/index.js';
 import './track-list.js';
 
 @customElement('album-view')
@@ -337,6 +337,17 @@ export class AlbumView extends LitElement {
     }
   }
 
+  /**
+   * The index entries belonging to this album, matched on album ID.
+   *
+   * Entries carry their own album_id, so this is a plain comparison — no
+   * name is ever tested against an ID, and nothing has to be inverted.
+   */
+  private async albumEntries(index: SearchIndex): Promise<SearchIndexTrack[]> {
+    const ids = await Promise.all(index.tracks.map(t => this.musicSpace!.entryAlbumId(t)));
+    return index.tracks.filter((_t, i) => ids[i] === this.albumId);
+  }
+
   private async loadAlbum() {
     if (!this.musicSpace || !this.albumId) return;
 
@@ -351,26 +362,14 @@ export class AlbumView extends LitElement {
         // Album object may not exist, build from search index
         const index = await this.musicSpace.getSearchIndex();
 
-        // Find tracks whose generated album ID matches this.albumId
-        const albumTracks: typeof index.tracks = [];
-        let matchedArtist = '';
-        let matchedTitle = '';
-        const seen = new Map<string, string>();
-        for (const t of index.tracks) {
-          const key = `${t.artist}|${t.album}`;
-          if (!seen.has(key)) {
-            seen.set(key, await this.musicSpace.generateAlbumId(t.artist, t.album));
-          }
-          if (seen.get(key) === this.albumId) {
-            albumTracks.push(t);
-            matchedArtist = t.artist;
-            matchedTitle = t.album;
-          }
-        }
-
+        // Collect this album's tracks by ID, then take the display names from
+        // them — the album record itself is what's missing here.
+        const albumTracks = await this.albumEntries(index);
         if (albumTracks.length === 0) {
           throw new Error('Album not found');
         }
+        const matchedArtist = albumTracks[0].artist;
+        const matchedTitle = albumTracks[0].album;
 
         const artistId = await this.musicSpace.generateArtistId(matchedArtist);
         this.album = {
@@ -393,10 +392,8 @@ export class AlbumView extends LitElement {
       const trackIdSet = new Set(this.album.track_ids);
       try {
         const index = await this.musicSpace.getSearchIndex();
-        for (const t of index.tracks) {
-          if (t.artist === this.album.artist_name && t.album === this.album.title) {
-            trackIdSet.add(t.id);
-          }
+        for (const t of await this.albumEntries(index)) {
+          trackIdSet.add(t.id);
         }
       } catch {
         // No search index available (e.g. offline first run) — fall back to

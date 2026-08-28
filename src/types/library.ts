@@ -221,6 +221,19 @@ export interface SearchIndexTrack {
   album: string;
   /** Duration in milliseconds */
   duration_ms: number;
+  /**
+   * PRF artist ID — same value as Track.artist_id.
+   *
+   * Carried here so a view holding only an ID can match entries ID-to-ID
+   * instead of deriving one from every name to find the match. The index is
+   * stored encrypted, so keeping IDs alongside names reveals nothing new.
+   *
+   * Optional: indexes written before this field existed omit it, and the
+   * reader derives it from the name instead.
+   */
+  artist_id?: string;
+  /** PRF album ID — same value as Track.album_id. See {@link artist_id}. */
+  album_id?: string;
 }
 
 /**

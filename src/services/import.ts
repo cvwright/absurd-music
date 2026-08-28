@@ -11,6 +11,7 @@ import type {
   Album,
   Artist,
   SearchIndex,
+  SearchIndexTrack,
 } from '@/types/index.js';
 import type { MusicSpaceService } from './music-space.js';
 
@@ -490,18 +491,28 @@ class ImportServiceImpl {
 
     // Check if track already exists in index
     const existingIdx = index.tracks.findIndex((t) => t.id === track.track_id);
-    const entry = {
+    const entry: SearchIndexTrack = {
       id: track.track_id,
       title: track.title,
       artist: track.artist_name,
       album: track.album_name,
       duration_ms: track.duration_ms,
+      artist_id: track.artist_id,
+      album_id: track.album_id,
     };
 
     if (existingIdx >= 0) {
       index.tracks[existingIdx] = entry;
     } else {
       index.tracks.push(entry);
+    }
+
+    // Opportunistically backfill entries written before the index carried IDs.
+    // We are already rewriting the whole index, and only an importer (who by
+    // definition can write the library) ever gets here, so this is free.
+    for (const t of index.tracks) {
+      t.artist_id ??= await space.generateArtistId(t.artist);
+      t.album_id ??= await space.generateAlbumId(t.artist, t.album);
     }
 
     index.last_updated = Date.now();

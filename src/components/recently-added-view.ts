@@ -338,7 +338,7 @@ export class RecentlyAddedView extends LitElement {
     return html`
       <div class="album-grid">
         ${this.recentAlbums.map(album => html`
-          <div class="album-card" @click=${() => this.navigateToAlbum(album.album_id)}>
+          <div class="album-card" @click=${() => this.navigateToAlbum(album)}>
             <div class="album-artwork">
               ${album.artwork_blob_id && this.artworkUrls.get(album.artwork_blob_id)
                 ? html`<img src=${this.artworkUrls.get(album.artwork_blob_id)!} alt="" />`
@@ -366,9 +366,9 @@ export class RecentlyAddedView extends LitElement {
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  private navigateToAlbum(albumId: string) {
+  private navigateToAlbum(album: RecentAlbum) {
     this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { view: 'album', params: { id: albumId } },
+      detail: { view: 'album', params: { id: album.album_id } },
       bubbles: true,
       composed: true,
     }));

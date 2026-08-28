@@ -8,7 +8,7 @@
 import { Space, IndexedDBMessageStore, type KeyPair, bytesToString, stringToBytes, decryptAesGcm, encodeBase64, decodeBase64, extractFromTypedId } from 'reeeductio';
 
 import type { MessageQuery, MessagesResponse, MessageCreated, Capability } from 'reeeductio';
-import type { Track, Album, Artist, SearchIndex, Playlist, PlaylistIndex } from '@/types/index.js';
+import type { Track, Album, Artist, SearchIndex, SearchIndexTrack, Playlist, PlaylistIndex } from '@/types/index.js';
 import { CryptoService } from './crypto.js';
 import type { CacheService } from './cache.js';
 
@@ -713,6 +713,23 @@ export class MusicSpaceService {
    */
   async generateAlbumId(artistName: string, albumName: string): Promise<string> {
     return this.crypto.generateAlbumId(artistName, albumName);
+  }
+
+  /**
+   * The artist ID of a search index entry.
+   *
+   * Reads the stored ID when present; otherwise derives it forward from the
+   * entry's name, which is what indexes written before the ID fields existed
+   * require. Derivation is memoized, so an old index costs one PRF call per
+   * distinct name, once.
+   */
+  async entryArtistId(entry: SearchIndexTrack): Promise<string> {
+    return entry.artist_id ?? this.generateArtistId(entry.artist);
+  }
+
+  /** The album ID of a search index entry. See {@link entryArtistId}. */
+  async entryAlbumId(entry: SearchIndexTrack): Promise<string> {
+    return entry.album_id ?? this.generateAlbumId(entry.artist, entry.album);
   }
 
   // ============================================================

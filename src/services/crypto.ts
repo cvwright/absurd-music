@@ -11,6 +11,26 @@ import { encodeBase64 } from 'reeeductio';
 const TRACK_ID_SALT = 'reeeductio-music-track-id';
 
 /**
+ * Normalize a name (artist, album title) before it is fed to the PRF.
+ *
+ * Every local grouping key must use this same normalization, otherwise two
+ * spellings that produce one PRF ID would be treated as two distinct
+ * collections in the UI (and vice versa).
+ */
+export function normalizeName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
+ * Local grouping key for an album, matching {@link CryptoService.generateAlbumId}'s
+ * input exactly. Use this — never the raw `artist|album` string, and never the
+ * album's PRF ID — whenever tracks need to be grouped without an async PRF call.
+ */
+export function albumGroupKey(artistName: string, albumTitle: string): string {
+  return `${normalizeName(artistName)}|${normalizeName(albumTitle)}`;
+}
+
+/**
  * Service for cryptographic operations specific to the music player.
  *
  * Handles:
@@ -19,6 +39,16 @@ const TRACK_ID_SALT = 'reeeductio-music-track-id';
 export class CryptoService {
   private symmetricRoot: Uint8Array;
   private prfKey: CryptoKey | null = null;
+
+  /**
+   * Memoized name→ID results, keyed by `${prefix}:${normalized input}`.
+   *
+   * Artist and album IDs are derived from short, highly repeated strings —
+   * the same handful of names is hashed again on every collection rebuild and
+   * every ID→name resolution. Track IDs are keyed by whole-file bytes and are
+   * derived once per import, so they are not memoized.
+   */
+  private readonly nameIdCache = new Map<string, string>();
 
   constructor(symmetricRoot: Uint8Array) {
     if (symmetricRoot.length !== 32) {
@@ -103,9 +133,7 @@ export class CryptoService {
    * artist_id = PRF(space_key, SHA256(lowercase(artist_name)))
    */
   async generateArtistId(artistName: string): Promise<string> {
-    const normalized = artistName.trim().toLowerCase();
-    const nameBytes = new TextEncoder().encode(normalized);
-    return this.applyPRF(nameBytes, 'artist');
+    return this.memoizedPRF('artist', normalizeName(artistName));
   }
 
   /**
@@ -114,8 +142,17 @@ export class CryptoService {
    * album_id = PRF(space_key, SHA256(lowercase(artist_name)|lowercase(album_name)))
    */
   async generateAlbumId(artistName: string, albumName: string): Promise<string> {
-    const combined = `${artistName.trim().toLowerCase()}|${albumName.trim().toLowerCase()}`;
-    const combinedBytes = new TextEncoder().encode(combined);
-    return this.applyPRF(combinedBytes, 'album');
+    return this.memoizedPRF('album', albumGroupKey(artistName, albumName));
+  }
+
+  /** Apply the PRF to an already-normalized string, caching the result. */
+  private async memoizedPRF(prefix: string, normalized: string): Promise<string> {
+    const cacheKey = `${prefix}:${normalized}`;
+    const hit = this.nameIdCache.get(cacheKey);
+    if (hit) return hit;
+
+    const id = await this.applyPRF(new TextEncoder().encode(normalized), prefix);
+    this.nameIdCache.set(cacheKey, id);
+    return id;
   }
 }
