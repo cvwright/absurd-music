@@ -28,6 +28,10 @@ Browser-based encrypted music player using Lit web components and the reeeductio
 - IndexedDB for caching with LRU eviction
 - Hybrid denormalized/normalized data (e.g., Track has both `artist_name` and `artist_id`)
 
+## Git
+
+- Do not commit. Leave changes in the working tree; the user reviews and commits them.
+
 ## Style
 
 - Strict TypeScript mode
