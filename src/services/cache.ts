@@ -33,6 +33,15 @@ export class CacheService {
   private preferences: CachePreferences;
   private currentSize = 0;
 
+  /**
+   * In-flight scan of the tracks store that computes {@link currentSize} and
+   * populates {@link cachedTrackIds}. Started by `init()` but deliberately not
+   * awaited there: scanning every cached track can take a while with a large
+   * offline cache, and nothing on the first-render path needs the totals.
+   * Any operation that mutates the cache awaits it via {@link sizeReady}.
+   */
+  private sizeScan: Promise<void> | null = null;
+
   /** In-memory set of cached track IDs for synchronous lookup by views. */
   readonly cachedTrackIds = new Set<string>();
 
@@ -90,7 +99,8 @@ export class CacheService {
         }
 
         this.db = db;
-        this.calculateCurrentSize().then(resolve).catch(reject);
+        this.startSizeScan();
+        resolve();
       };
 
       request.onupgradeneeded = (event) => {
@@ -117,7 +127,8 @@ export class CacheService {
           this.db?.close();
           this.db = null;
         };
-        this.calculateCurrentSize().then(resolve).catch(reject);
+        this.startSizeScan();
+        resolve();
       };
 
       request.onupgradeneeded = (event) => {
@@ -161,6 +172,21 @@ export class CacheService {
   /**
    * Calculate current cache size.
    */
+  /** Kick off the background size scan. Never rejects. */
+  private startSizeScan(): void {
+    this.sizeScan = this.calculateCurrentSize().catch((err) => {
+      console.warn('[cache] Size scan failed:', err);
+    });
+  }
+
+  /**
+   * Await the background size scan. Callers that change what is cached must
+   * do this first, so their adjustments are not clobbered by the scan result.
+   */
+  private async sizeReady(): Promise<void> {
+    await this.sizeScan;
+  }
+
   private async calculateCurrentSize(): Promise<void> {
     const db = this.ensureDb();
 
@@ -225,6 +251,7 @@ export class CacheService {
     metadata: CachedTrack['metadata']
   ): Promise<void> {
     const db = this.ensureDb();
+    await this.sizeReady();
     const size = audioData.byteLength;
 
     // Check if we need to evict
@@ -261,6 +288,7 @@ export class CacheService {
    */
   async removeTrack(trackId: string): Promise<void> {
     const db = this.ensureDb();
+    await this.sizeReady();
 
     // Get size first
     const track = await this.getTrack(trackId);
@@ -334,6 +362,7 @@ export class CacheService {
    * Prune old entries based on max age.
    */
   async pruneOld(): Promise<number> {
+    await this.sizeReady();
     const db = this.ensureDb();
     const maxAge = this.preferences.max_age_days * 24 * 60 * 60 * 1000;
     const cutoff = Date.now() - maxAge;
@@ -371,6 +400,7 @@ export class CacheService {
    */
   async clear(): Promise<void> {
     const db = this.ensureDb();
+    await this.sizeReady();
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(TRACKS_STORE, 'readwrite');

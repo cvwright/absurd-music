@@ -283,6 +283,9 @@ export class MusicApp extends LitElement {
         await this.musicSpace.authenticate();
       }
 
+      // The stream may never have been established (e.g. launched offline).
+      this.connectRealtime();
+
       // Keep showing cached indexes; refresh them from the server in place.
       await this.loadPlaylists({ bypassCache: true });
 
@@ -332,6 +335,15 @@ export class MusicApp extends LitElement {
     }
   }
 
+  /**
+   * Start from cached credentials without waiting on the network.
+   *
+   * The UI is rendered as soon as the local cache is ready; server
+   * authentication (and everything that depends on it) runs in the
+   * background. The SDK authenticates lazily on its first network call, so
+   * cached reads work fine before `authenticate()` resolves, and a cold-cache
+   * read simply waits for auth as it always did.
+   */
   private async tryAutoLogin() {
     try {
       const savedConfig = await loadCredentials();
@@ -339,29 +351,63 @@ export class MusicApp extends LitElement {
 
       this.musicSpace = new MusicSpaceService(savedConfig);
 
-      try {
-        await this.musicSpace.authenticate();
-        await this.initServices();
-        this.authenticated = true;
-        this.updateUrlForSpace(savedConfig.spaceId);
-      } catch (err) {
-        if (isAuthRejection(err)) {
-          // Credentials rejected by server — clear them and show login.
-          this.musicSpace = null;
-          clearCredentials();
-        } else {
-          // Network unavailable (or any non-auth failure) — start in
-          // offline/cached mode and keep the saved credentials.
-          await this.initServices();
-          this.authenticated = true;
-          this.updateUrlForSpace(savedConfig.spaceId);
-        }
-      }
+      // Cache-backed setup only — no network on this path.
+      await this.initServices();
+      this.authenticated = true;
+      this.updateUrlForSpace(savedConfig.spaceId);
     } finally {
       this.loading = false;
     }
+
+    // Authenticate (and do everything that needs the server) off the
+    // critical path, once the UI is already on screen.
+    void this.authenticateInBackground();
   }
 
+  /**
+   * Authenticate against the server after first render.
+   *
+   * Only a genuine credential rejection logs the user out; network failures
+   * leave us in offline/cached mode with the saved credentials intact, and
+   * the `online` handler retries later.
+   */
+  private async authenticateInBackground() {
+    const space = this.musicSpace;
+    if (!space) return;
+
+    try {
+      await space.authenticate();
+    } catch (err) {
+      if (!isAuthRejection(err)) return; // offline — keep cached credentials
+
+      // A 401 is not proof the credentials are bad: the server holds one
+      // auth challenge per user, so a challenge issued by any other client
+      // (another tab, another device) can invalidate ours mid-flight. Only
+      // log out if a clean second attempt is rejected too.
+      try {
+        await space.authenticate();
+      } catch (retryErr) {
+        if (!isAuthRejection(retryErr)) return;
+        console.warn('[music-app] Stored credentials rejected — logging out');
+        clearCredentials();
+        this.musicSpace = null;
+        this.authenticated = false;
+        return;
+      }
+    }
+
+    if (this.musicSpace !== space) return; // logged out while we were waiting
+
+    this.connectRealtime();
+    this.warmMetadataCache();
+    // Refresh the playlist index now that the server is reachable.
+    this.loadPlaylists({ bypassCache: true }).catch(() => {});
+  }
+
+  /**
+   * Wire up services that only need the local cache. Deliberately free of
+   * network round-trips so it can run before first render.
+   */
   private async initServices() {
     if (!this.musicSpace) return;
     await this.cacheService.init();
@@ -370,11 +416,14 @@ export class MusicApp extends LitElement {
     this.playlistService = new PlaylistService(this.musicSpace);
     this.playCountService?.destroy();
     this.playCountService = new PlayCountService(this.playbackService, this.musicSpace);
-    await this.loadPlaylists();
-    this.musicSpace.connectWebSocket().catch((err) => {
+    // Cache-first, and network-bound only on a cold cache — never blocks render.
+    this.loadPlaylists().catch(() => {});
+  }
+
+  private connectRealtime() {
+    this.musicSpace?.connectWebSocket().catch((err) => {
       console.warn('WebSocket initial connection failed:', err);
     });
-    this.warmMetadataCache();
   }
 
   /**
@@ -582,6 +631,8 @@ export class MusicApp extends LitElement {
       saveCredentials(e.detail);
       this.authenticated = true;
       this.updateUrlForSpace(e.detail.spaceId);
+      this.connectRealtime();
+      this.warmMetadataCache();
     } catch (err) {
       this.musicSpace = null;
       const loginView = this.shadowRoot?.querySelector('login-view');

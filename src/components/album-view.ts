@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { MusicSpaceService, CacheService, ImportService, safeImageMimeType } from '@/services/index.js';
+import { MusicSpaceService, CacheService, safeImageMimeType } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { Album, Track, TrackListItem, SearchIndex, SearchIndexTrack } from '@/types/index.js';
 import './track-list.js';
@@ -749,6 +749,7 @@ export class AlbumView extends LitElement {
 
     try {
       // Use ImportService to fetch artwork from iTunes
+      const { ImportService } = await import('@/services/import.js');
       const result = await ImportService.fetchArtworkFromItunes(
         this.album.artist_name,
         this.album.title,

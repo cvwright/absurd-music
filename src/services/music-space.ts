@@ -30,6 +30,7 @@ export class MusicSpaceService {
   private crypto: CryptoService;
   private cache: CacheService | null = null;
   private _authenticated = false;
+  private authPromise: Promise<void> | null = null;
   private readonly spaceId: string;
 
   constructor(config: MusicSpaceConfig) {
@@ -49,14 +50,46 @@ export class MusicSpaceService {
   /**
    * Authenticate with the reeeductio server.
    *
-   * If the current user is the space root (same keypair as the space),
-   * also runs one-time setup: ensures the "listener" role exists with the
-   * correct capabilities, and enables OPAQUE for password-based login.
+   * If the current user is the space root (same keypair as the space), one-time
+   * setup — ensuring the "listener" role exists with the correct capabilities,
+   * and enabling OPAQUE for password-based login — is kicked off in the
+   * background; this method does not wait for it.
    */
   async authenticate(): Promise<void> {
-    await this.space.authenticate();
-    this._authenticated = true;
-    await this.runRootSetup();
+    // Dedupe concurrent callers (startup and the `online` handler can race).
+    if (!this.authPromise) {
+      this.authPromise = this.space.authenticate()
+        .then(() => {
+          this._authenticated = true;
+          // Root setup is several sequential round-trips and nothing else
+          // waits on it — never let it hold up the caller.
+          void this.runRootSetup().catch((err) => {
+            console.warn('[music-space] Root setup failed:', err);
+          });
+        })
+        .catch((err) => {
+          // Only a failed attempt is retryable; a successful one stays cached.
+          this.authPromise = null;
+          throw err;
+        });
+    }
+    return this.authPromise;
+  }
+
+  /**
+   * Gate every network operation behind a single authentication attempt.
+   *
+   * The server keeps exactly one outstanding challenge per user, and issuing a
+   * second one invalidates the first — so two concurrent authentications make
+   * the loser's `/auth/verify` fail with a 401 that looks exactly like
+   * rejected credentials. The SDK authenticates lazily on any request with no
+   * token, so without this gate a request racing our startup authentication
+   * would trigger precisely that. Everything funnels through the shared
+   * `authPromise` instead: the first caller authenticates, the rest wait.
+   */
+  private async ready(): Promise<void> {
+    if (this._authenticated) return;
+    await this.authenticate();
   }
 
   // ============================================================
@@ -183,6 +216,7 @@ export class MusicSpaceService {
       const cached = await this.getCachedSearchIndex();
       if (cached) return cached;
     }
+    await this.ready();
     const data = await this.space.getEncryptedData(key);
     const result = JSON.parse(bytesToString(data)) as SearchIndex;
     this.cacheWrite(key, result);
@@ -194,6 +228,7 @@ export class MusicSpaceService {
    */
   async setSearchIndex(index: SearchIndex): Promise<void> {
     const json = JSON.stringify(index);
+    await this.ready();
     await this.space.setEncryptedData('library/index', stringToBytes(json));
     this.cacheWrite('library/index', index);
   }
@@ -303,6 +338,7 @@ export class MusicSpaceService {
         }
       }
     } catch { /* cache miss is fine */ }
+    await this.ready();
     const data = await this.space.getEncryptedData(key);
     const track = JSON.parse(bytesToString(data)) as Track | null;
     if (!track) throw new Error(`Track not found: ${trackId}`);
@@ -315,6 +351,7 @@ export class MusicSpaceService {
    */
   async setTrack(track: Track): Promise<void> {
     const json = JSON.stringify(track);
+    await this.ready();
     await this.space.setEncryptedData(
       `library/tracks/${track.track_id}`,
       stringToBytes(json)
@@ -336,6 +373,7 @@ export class MusicSpaceService {
         }
       }
     } catch { /* cache miss is fine */ }
+    await this.ready();
     const data = await this.space.getEncryptedData(key);
     const album = JSON.parse(bytesToString(data)) as Album | null;
     if (!album) throw new Error(`Album not found: ${albumId}`);
@@ -348,6 +386,7 @@ export class MusicSpaceService {
    */
   async setAlbum(album: Album): Promise<void> {
     const json = JSON.stringify(album);
+    await this.ready();
     await this.space.setEncryptedData(
       `library/albums/${album.album_id}`,
       stringToBytes(json)
@@ -369,6 +408,7 @@ export class MusicSpaceService {
         }
       }
     } catch { /* cache miss is fine */ }
+    await this.ready();
     const data = await this.space.getEncryptedData(key);
     const artist = JSON.parse(bytesToString(data)) as Artist | null;
     if (!artist) throw new Error(`Artist not found: ${artistId}`);
@@ -381,6 +421,7 @@ export class MusicSpaceService {
    */
   async setArtist(artist: Artist): Promise<void> {
     const json = JSON.stringify(artist);
+    await this.ready();
     await this.space.setEncryptedData(
       `library/artists/${artist.artist_id}`,
       stringToBytes(json)
@@ -402,6 +443,7 @@ export class MusicSpaceService {
   async downloadAudioBlob(blobId: string, encryptionKey: string): Promise<ArrayBuffer> {
     // Download and decrypt using the SDK (AES-GCM-256, 12-byte IV).
     const key = decodeBase64(encryptionKey);
+    await this.ready();
     const decrypted = await this.space.downloadAndDecryptBlob(blobId, key);
     return decrypted.buffer as ArrayBuffer;
   }
@@ -415,6 +457,7 @@ export class MusicSpaceService {
   async uploadAudioBlob(audioData: ArrayBuffer): Promise<{ blobId: string; encryptionKey: string }> {
     // Encrypt with a random per-blob DEK and upload via the SDK
     // (AES-GCM-256, 12-byte IV). The DEK is stored base64 in track metadata.
+    await this.ready();
     const { blob_id, key } = await this.space.encryptAndUploadBlob(new Uint8Array(audioData));
 
     return {
@@ -446,6 +489,7 @@ export class MusicSpaceService {
    */
   async getUserState<T>(path: string): Promise<T> {
     const fullPath = `user/${this.userId}/${path}`;
+    await this.ready();
     const data = await this.space.getEncryptedState(fullPath);
     return JSON.parse(bytesToString(data)) as T;
   }
@@ -455,6 +499,7 @@ export class MusicSpaceService {
    */
   async setUserState<T>(path: string, data: T): Promise<void> {
     const fullPath = `user/${this.userId}/${path}`;
+    await this.ready();
     await this.space.setEncryptedState(fullPath, stringToBytes(JSON.stringify(data)));
   }
 
@@ -473,6 +518,7 @@ export class MusicSpaceService {
         }
       } catch { /* cache miss is fine */ }
     }
+    await this.ready();
     const data = await this.space.getEncryptedData(fullPath);
     const result = JSON.parse(bytesToString(data)) as T;
     this.cacheWrite(fullPath, result);
@@ -484,6 +530,7 @@ export class MusicSpaceService {
    */
   async setUserData<T>(path: string, value: T): Promise<void> {
     const fullPath = `user/${this.userId}/${path}`;
+    await this.ready();
     await this.space.setEncryptedData(fullPath, stringToBytes(JSON.stringify(value)));
     this.cacheWrite(fullPath, value);
   }
@@ -493,6 +540,7 @@ export class MusicSpaceService {
    */
   async deleteUserData(path: string): Promise<void> {
     const fullPath = `user/${this.userId}/${path}`;
+    await this.ready();
     await this.space.setEncryptedData(fullPath, stringToBytes('null'));
     this.cacheRemove(fullPath);
   }
@@ -569,6 +617,7 @@ export class MusicSpaceService {
    * Delete a blob from storage.
    */
   async deleteBlob(blobId: string): Promise<void> {
+    await this.ready();
     await this.space.deleteBlob(blobId);
   }
 
@@ -628,6 +677,7 @@ export class MusicSpaceService {
     }
 
     // Delete track kv data
+    await this.ready();
     await this.space.setEncryptedData(
       `library/tracks/${trackId}`,
       stringToBytes('null')
@@ -681,6 +731,7 @@ export class MusicSpaceService {
     }
 
     // Delete album kv data
+    await this.ready();
     await this.space.setEncryptedData(
       `library/albums/${albumId}`,
       stringToBytes('null')
@@ -745,6 +796,7 @@ export class MusicSpaceService {
    * Get WebSocket connection URL for real-time updates.
    */
   async getWebSocketUrl(): Promise<string> {
+    await this.ready();
     return this.space.getWebSocketConnectionUrl();
   }
 
@@ -840,6 +892,7 @@ export class MusicSpaceService {
    */
   async postMessage<T>(topicId: string, msgType: string, data: T): Promise<MessageCreated> {
     const dataBytes = stringToBytes(JSON.stringify(data));
+    await this.ready();
     return this.space.postEncryptedMessage(topicId, msgType, dataBytes);
   }
 
@@ -851,6 +904,7 @@ export class MusicSpaceService {
    * @returns MessagesResponse with messages array
    */
   async getMessages(topicId: string, query?: MessageQuery): Promise<MessagesResponse> {
+    await this.ready();
     return this.space.getMessages(topicId, query);
   }
 

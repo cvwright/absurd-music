@@ -7,7 +7,7 @@
 import { LitElement, html, css } from 'lit';
 import type { TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { ImportService, MusicSpaceService, CacheService, safeImageMimeType, normalizeName, albumGroupKey } from '@/services/index.js';
+import { MusicSpaceService, CacheService, safeImageMimeType, normalizeName, albumGroupKey } from '@/services/index.js';
 import { downloadTrackForOffline } from '@/services/download.js';
 import type { ParsedTrackMetadata, SearchIndex, Album, Artist, Track, ImportNotification, PlaylistIndexEntry, TrackListItem } from '@/types/index.js';
 import { IMPORTS_TOPIC_ID, IMPORT_BATCH_TYPE } from '@/types/index.js';
@@ -1580,6 +1580,7 @@ export class LibraryView extends LitElement {
   }
 
   private async openImport() {
+    const { ImportService } = await import('@/services/import.js');
     const files = await ImportService.selectFiles();
     if (files.length > 0) {
       await this.importFiles(files);
@@ -1600,6 +1601,7 @@ export class LibraryView extends LitElement {
     const albumTracks = new Map<string, string[]>();
 
     try {
+      const { ImportService } = await import('@/services/import.js');
       const parsed: ParsedTrackMetadata[] = await ImportService.parseFiles(files);
 
       // Import each track
